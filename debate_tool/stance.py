@@ -182,27 +182,56 @@ async def generate_stances(
         "Content-Type": "application/json",
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                f"{url.rstrip('/')}/chat/completions",
-                json=payload,
-                headers=headers,
+    # Retry logic for 503 errors
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(
+                    url.rstrip('/'),
+                    json=payload,
+                    headers=headers,
+                )
+                
+                # If 503, retry with delay
+                if resp.status_code == 503:
+                    if attempt < max_retries - 1:
+                        print(f"[stance] 503 错误，{retry_delay}秒后重试 (尝试 {attempt + 1}/{max_retries})...", file=sys.stderr)
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                        continue
+                    else:
+                        msg = f"LLM API 返回 503 (服务暂时不可用，已重试 {max_retries} 次)"
+                        print(f"[stance] ERROR: {msg}", file=sys.stderr)
+                        return StanceResult(
+                            debaters=[], topic_angles=[], reasoning=msg,
+                            raw_response=resp.text,
+                        )
+                
+                resp.raise_for_status()
+                break  # Success, exit retry loop
+                
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 503:
+                if attempt < max_retries - 1:
+                    print(f"[stance] 503 错误，{retry_delay}秒后重试 (尝试 {attempt + 1}/{max_retries})...", file=sys.stderr)
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+            msg = f"LLM API 返回 HTTP {exc.response.status_code}"
+            print(f"[stance] ERROR: {msg}", file=sys.stderr)
+            return StanceResult(
+                debaters=[], topic_angles=[], reasoning=msg,
+                raw_response=exc.response.text,
             )
-            resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        msg = f"LLM API returned HTTP {exc.response.status_code}"
-        print(f"[stance] ERROR: {msg}", file=sys.stderr)
-        return StanceResult(
-            debaters=[], topic_angles=[], reasoning=msg,
-            raw_response=exc.response.text,
-        )
-    except httpx.RequestError as exc:
-        msg = f"LLM API request failed: {exc}"
-        print(f"[stance] ERROR: {msg}", file=sys.stderr)
-        return StanceResult(
-            debaters=[], topic_angles=[], reasoning=msg,
-        )
+        except httpx.RequestError as exc:
+            msg = f"LLM API request failed: {exc}"
+            print(f"[stance] ERROR: {msg}", file=sys.stderr)
+            return StanceResult(
+                debaters=[], topic_angles=[], reasoning=msg,
+            )
 
     raw = resp.json()["choices"][0]["message"]["content"]
 
