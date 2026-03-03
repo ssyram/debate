@@ -95,7 +95,7 @@ async def call_llm(model: str, system: str, user_content: str,
     async with httpx.AsyncClient(timeout=timeout) as c:
         for attempt in range(3):
             try:
-                r = await c.post(f"{url}/chat/completions",
+                r = await c.post(url.rstrip('/'),
                                  headers={"Authorization": f"Bearer {key}",
                                           "Content-Type": "application/json"},
                                  json=payload)
