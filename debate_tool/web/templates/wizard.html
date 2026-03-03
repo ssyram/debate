@@ -245,65 +245,84 @@ details .details-body { margin-top: 8px; font-size: 13px; color: #4b5563; white-
     <h1 class="form-title">辩论议题向导</h1>
     <p class="form-subtitle">配置多模型辩论参数，生成辩论议题文件</p>
 
-    <!-- ── 1. 辩论标题 ── -->
+    <!-- ── 1. API 配置 ── -->
     <div class="section" data-section="1">
-      <div class="section-head"><span class="section-num">1</span><span class="section-label">辩论标题</span></div>
-      <input type="text" id="title" placeholder="例：AI 是否应该拥有投票权">
-      <div class="error-text" id="titleError">标题不能为空</div>
+      <div class="section-head"><span class="section-num">1</span><span class="section-label">API 配置</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <label class="field-label">API 端点</label>
+          <input type="text" id="baseUrl" placeholder="https://api.openai.com/v1/chat/completions">
+        </div>
+        <div>
+          <label class="field-label">默认模型</label>
+          <input type="text" id="defaultModel" value="gpt-5.2" placeholder="例：gpt-5.2, claude-3-5-sonnet-20241022">
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="field-label">API 密钥</label>
+        <div class="pw-wrap">
+          <input type="password" id="apiKey" placeholder="sk-xxx 或留空使用环境变量">
+          <button class="pw-toggle" id="pwToggle" type="button">◉</button>
+        </div>
+      </div>
+      <div class="helper">OpenAI 兼容 API 配置（留空使用环境变量 DEBATE_API_KEY）</div>
+      <div class="row-tight mt-8">
+        <button class="btn btn-primary btn-sm" id="testApiBtn">🧪 测试 API 连接</button>
+        <span id="testApiSpinner" style="display:none"><span class="spinner"></span> 测试中...</span>
+      </div>
+      <div id="testApiResult" style="margin-top:8px;display:none"></div>
     </div>
 
-    <!-- ── 2. 输出路径 ── -->
+    <!-- ── 2. 议题配置 ── -->
     <div class="section" data-section="2">
-      <div class="section-head"><span class="section-num">2</span><span class="section-label">输出路径</span></div>
-      <input type="text" id="outputPath" placeholder="自动根据标题生成">
-      <div class="helper">生成的辩论文件保存路径</div>
-      <div class="error-text" id="outputError">输出路径不能为空</div>
+      <div class="section-head"><span class="section-num">2</span><span class="section-label">议题配置</span></div>
+      
+      <div style="margin-bottom:16px">
+        <label class="field-label">辩论标题</label>
+        <input type="text" id="title" placeholder="例：AI 是否应该拥有投票权">
+        <div class="error-text" id="titleError">标题不能为空</div>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <label class="field-label">输出路径</label>
+        <input type="text" id="outputPath" placeholder="自动根据标题生成">
+        <div class="helper">生成的辩论文件保存路径</div>
+        <div class="error-text" id="outputError">输出路径不能为空</div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label class="field-label">议题正文</label>
+        <div class="toggle-group" style="margin-bottom:8px">
+          <button class="toggle-btn active" data-mode="input" id="topicModeInput">直接输入</button>
+          <button class="toggle-btn" data-mode="file" id="topicModeFile">从文件加载</button>
+        </div>
+        <div id="topicInputArea">
+          <textarea id="topicBody" rows="8" placeholder="在此输入辩论议题的详细描述..."></textarea>
+        </div>
+        <div id="topicFileArea" style="display:none">
+          <input type="file" id="topicFile" accept=".md,.txt,.markdown">
+          <textarea id="topicFileContent" rows="6" readonly style="margin-top:8px;background:#f9fafb;display:none"></textarea>
+        </div>
+        <div class="helper">议题的完整描述，将放在 YAML 元数据之后</div>
+      </div>
+
+      <div class="row-tight mt-8">
+        <button class="btn btn-secondary btn-sm" id="generateTopicBodyBtn">✨ AI 生成辩题说明</button>
+        <span id="generateTopicBodySpinner" style="display:none"><span class="spinner"></span> 生成中...</span>
+      </div>
+      <div id="generateTopicBodyResult" style="margin-top:8px;display:none"></div>
     </div>
 
-    <!-- ── 3. 轮数 ── -->
+    <!-- ── 3. 辩论轮数 ── -->
     <div class="section" data-section="3">
       <div class="section-head"><span class="section-num">3</span><span class="section-label">辩论轮数</span></div>
       <input type="number" id="rounds" min="1" max="20" value="3">
       <div class="helper">辩论轮数 (1-20)</div>
     </div>
 
-    <!-- ── 4. API 端点 ── -->
+    <!-- ── 4. 立场生成器 ── -->
     <div class="section" data-section="4">
-      <div class="section-head"><span class="section-num">4</span><span class="section-label">API 端点</span></div>
-      <input type="text" id="baseUrl" placeholder="留空使用默认值">
-      <div class="helper">OpenAI 兼容 API 端点（留空使用默认值）</div>
-    </div>
-
-    <!-- ── 5. API 密钥 ── -->
-    <div class="section" data-section="5">
-      <div class="section-head"><span class="section-num">5</span><span class="section-label">API 密钥</span></div>
-      <div class="pw-wrap">
-        <input type="password" id="apiKey" placeholder="留空使用默认值">
-        <button class="pw-toggle" id="pwToggle" type="button">◉</button>
-      </div>
-      <div class="helper">API 密钥（留空使用默认值）</div>
-    </div>
-
-    <!-- ── 6. 议题正文 ── -->
-    <div class="section" data-section="6">
-      <div class="section-head"><span class="section-num">6</span><span class="section-label">议题正文</span></div>
-      <div class="toggle-group">
-        <button class="toggle-btn active" data-mode="input" id="topicModeInput">直接输入</button>
-        <button class="toggle-btn" data-mode="file" id="topicModeFile">从文件加载</button>
-      </div>
-      <div id="topicInputArea">
-        <textarea id="topicBody" rows="8" placeholder="在此输入辩论议题的详细描述..."></textarea>
-      </div>
-      <div id="topicFileArea" style="display:none">
-        <input type="file" id="topicFile" accept=".md,.txt,.markdown">
-        <textarea id="topicFileContent" rows="6" readonly style="margin-top:8px;background:#f9fafb;display:none"></textarea>
-      </div>
-      <div class="helper">议题的完整描述，将放在 YAML 元数据之后</div>
-    </div>
-
-    <!-- ── 7. 立场生成器 ── -->
-    <div class="section" data-section="7">
-      <div class="section-head"><span class="section-num">7</span><span class="section-label">立场生成器 (AI 辅助)</span></div>
+      <div class="section-head"><span class="section-num">4</span><span class="section-label">立场生成器 (AI 辅助)</span></div>
       <div class="stance-box">
         <div style="font-weight:600;margin-bottom:10px">🤖 AI 立场生成器</div>
         <div class="row mb-8">
@@ -341,17 +360,17 @@ details .details-body { margin-top: 8px; font-size: 13px; color: #4b5563; white-
       </div>
     </div>
 
-    <!-- ── 8. 辩手配置 ── -->
-    <div class="section" data-section="8">
-      <div class="section-head"><span class="section-num">8</span><span class="section-label">辩手配置</span></div>
+    <!-- ── 5. 辩手配置 ── -->
+    <div class="section" data-section="5">
+      <div class="section-head"><span class="section-num">5</span><span class="section-label">辩手配置</span></div>
       <div id="debatersContainer"></div>
       <div class="error-text" id="debatersError" style="margin-bottom:8px">至少需要 2 位辩手</div>
       <button class="btn btn-secondary btn-sm mt-8" id="addDebater">+ 添加辩手</button>
     </div>
 
-    <!-- ── 9. 裁判配置 ── -->
-    <div class="section" data-section="9">
-      <div class="section-head"><span class="section-num">9</span><span class="section-label">裁判配置</span></div>
+    <!-- ── 6. 裁判配置 ── -->
+    <div class="section" data-section="6">
+      <div class="section-head"><span class="section-num">6</span><span class="section-label">裁判配置</span></div>
       <div class="row">
         <div><label class="field-label">模型</label><input type="text" id="judgeModel"></div>
         <div><label class="field-label">名称</label><input type="text" id="judgeName"></div>
@@ -359,15 +378,15 @@ details .details-body { margin-top: 8px; font-size: 13px; color: #4b5563; white-
       </div>
     </div>
 
-    <!-- ── 10. 约束条件 ── -->
-    <div class="section" data-section="10">
-      <div class="section-head"><span class="section-num">10</span><span class="section-label">约束条件</span></div>
+    <!-- ── 7. 约束条件 ── -->
+    <div class="section" data-section="7">
+      <div class="section-head"><span class="section-num">7</span><span class="section-label">约束条件</span></div>
       <textarea id="constraints" rows="3" placeholder="辩论约束条件（留空则不设置）"></textarea>
     </div>
 
-    <!-- ── 11. 各轮任务说明 ── -->
-    <div class="section" data-section="11">
-      <div class="section-head"><span class="section-num">11</span><span class="section-label">各轮任务说明</span></div>
+    <!-- ── 8. 各轮任务说明 ── -->
+    <div class="section" data-section="8">
+      <div class="section-head"><span class="section-num">8</span><span class="section-label">各轮任务说明</span></div>
       <label class="field-label">第一轮任务</label>
       <textarea id="round1Task" rows="2"></textarea>
       <label class="field-label mt-12">中间轮任务</label>
@@ -376,22 +395,22 @@ details .details-body { margin-top: 8px; font-size: 13px; color: #4b5563; white-
       <textarea id="finalTask" rows="2"></textarea>
     </div>
 
-    <!-- ── 12. 裁判指令 ── -->
-    <div class="section" data-section="12">
-      <div class="section-head"><span class="section-num">12</span><span class="section-label">裁判指令</span></div>
+    <!-- ── 9. 裁判指令 ── -->
+    <div class="section" data-section="9">
+      <div class="section-head"><span class="section-num">9</span><span class="section-label">裁判指令</span></div>
       <textarea id="judgeInstructions" rows="6"></textarea>
     </div>
 
-    <!-- ── 13. 预览确认 ── -->
-    <div class="section" data-section="13">
-      <div class="section-head"><span class="section-num">13</span><span class="section-label">预览确认</span></div>
+    <!-- ── 10. 预览确认 ── -->
+    <div class="section" data-section="10">
+      <div class="section-head"><span class="section-num">10</span><span class="section-label">预览确认</span></div>
       <div class="inline-preview" id="inlinePreview">加载中...</div>
       <button class="btn btn-secondary btn-sm mt-8" id="refreshPreview">刷新预览</button>
     </div>
 
-    <!-- ── 14. 提交 ── -->
-    <div class="section" data-section="14">
-      <div class="section-head"><span class="section-num">14</span><span class="section-label">生成文件</span></div>
+    <!-- ── 11. 提交 ── -->
+    <div class="section" data-section="11">
+      <div class="section-head"><span class="section-num">11</span><span class="section-label">生成文件</span></div>
       <div id="submitResult"></div>
       <button class="btn btn-primary btn-lg mt-8" id="submitBtn">生成辩论文件</button>
     </div>
@@ -688,6 +707,111 @@ async function init() {
     $('pwToggle').textContent = is ? '◎' : '◉';
   });
 
+  // ── Test API connection ──
+  $('testApiBtn').addEventListener('click', async () => {
+    const baseUrl = $('baseUrl').value.trim();
+    const apiKey = $('apiKey').value.trim();
+    const stanceModel = $('stanceModel').value.trim();
+    
+    if (!baseUrl) {
+      alert('请先填写 API 端点');
+      return;
+    }
+    if (!apiKey) {
+      alert('请先填写 API 密钥');
+      return;
+    }
+    
+    $('testApiSpinner').style.display = 'inline-flex';
+    $('testApiBtn').disabled = true;
+    $('testApiResult').style.display = 'none';
+    
+    try {
+      const data = await api('/api/test-api', {
+        base_url: baseUrl,
+        api_key: apiKey,
+        model: stanceModel || 'gpt-5.2',
+      });
+      
+      const resultDiv = $('testApiResult');
+      resultDiv.style.display = 'block';
+      
+      if (data.success) {
+        resultDiv.innerHTML = `<div class="alert alert-success">✅ ${data.message}</div>`;
+        if (data.test_result) {
+          resultDiv.innerHTML += `
+            <div style="margin-top:8px;padding:8px;background:#f0fdf4;border-radius:6px;font-size:12px;">
+              <div><strong>生成辩手数：</strong>${data.test_result.debaters_count}</div>
+              <div><strong>首个辩手：</strong>${data.test_result.first_debater.name} (${data.test_result.first_debater.model})</div>
+              <div style="margin-top:4px;color:#059669">${data.test_result.reasoning}</div>
+            </div>
+          `;
+        }
+      } else {
+        resultDiv.innerHTML = `<div class="alert alert-error">❌ ${data.error}</div>`;
+      }
+    } catch (e) {
+      $('testApiResult').style.display = 'block';
+      $('testApiResult').innerHTML = `<div class="alert alert-error">❌ 测试失败: ${e.message}</div>`;
+    } finally {
+      $('testApiSpinner').style.display = 'none';
+      $('testApiBtn').disabled = false;
+    }
+  });
+
+  // ── Generate topic body ──
+  $('generateTopicBodyBtn').addEventListener('click', async () => {
+    const title = $('title').value.trim();
+    const baseUrl = $('baseUrl').value.trim();
+    const apiKey = $('apiKey').value.trim();
+    const stanceModel = $('stanceModel').value.trim();
+    
+    if (!title) {
+      alert('请先填写辩论标题');
+      return;
+    }
+    if (!baseUrl) {
+      alert('请先填写 API 端点');
+      return;
+    }
+    if (!apiKey) {
+      alert('请先填写 API 密钥');
+      return;
+    }
+    
+    $('generateTopicBodySpinner').style.display = 'inline-flex';
+    $('generateTopicBodyBtn').disabled = true;
+    $('generateTopicBodyResult').style.display = 'none';
+    
+    try {
+      const data = await api('/api/generate-topic-body', {
+        title: title,
+        base_url: baseUrl,
+        api_key: apiKey,
+        model: stanceModel || 'gpt-5.2',
+      });
+      
+      const resultDiv = $('generateTopicBodyResult');
+      resultDiv.style.display = 'block';
+      
+      if (data.success) {
+        resultDiv.innerHTML = `<div class="alert alert-success">✅ 辩题说明生成成功！</div>`;
+        $('topicBody').value = data.topic_body;
+        onFormChange();
+        // Scroll to topic body section
+        document.querySelector('[data-section="2"]').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        resultDiv.innerHTML = `<div class="alert alert-error">❌ ${data.error}</div>`;
+      }
+    } catch (e) {
+      $('generateTopicBodyResult').style.display = 'block';
+      $('generateTopicBodyResult').innerHTML = `<div class="alert alert-error">❌ 生成失败: ${e.message}</div>`;
+    } finally {
+      $('generateTopicBodySpinner').style.display = 'none';
+      $('generateTopicBodyBtn').disabled = false;
+    }
+  });
+
   // ── Topic mode toggle ──
   $('topicModeInput').addEventListener('click', () => {
     $('topicModeInput').classList.add('active');
@@ -730,7 +854,7 @@ async function init() {
     renderDebaters();
     onFormChange();
     // Scroll to debaters section
-    document.querySelector('[data-section="8"]').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.querySelector('[data-section="5"]').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 
   // ── Check stances ──

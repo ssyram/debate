@@ -25,6 +25,11 @@ env/
 *_debate_log.md
 *_debate_summary.md
 
+# Ignore all markdown files except README.md
+*.md
+!README.md
+!template.d
+
 # Local manual integration tests (sensitive)
 local_test/
 
