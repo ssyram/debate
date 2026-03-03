@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>辩论议题向导</title>
+<style>
+/* ── Reset & Base ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  color: #1a1a2e; background: #f5f5f7; line-height: 1.6; font-size: 14px;
+}
+::selection { background: #c7d2fe; color: #312e81; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c5c5d2; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9999aa; }
+
+/* ── Layout ───────────────────────────────────────── */
+.app { display: grid; min-height: 100vh; }
+@media (min-width: 900px) {
+  .app { grid-template-columns: 340px 1fr; }
+}
+
+/* ── Preview Panel ────────────────────────────────── */
+.preview-panel {
+  background: #1e1e2e; color: #cdd6f4; padding: 0;
+  overflow-y: auto; border-right: 1px solid #313244;
+}
+@media (min-width: 900px) {
+  .preview-panel { position: sticky; top: 0; height: 100vh; }
+}
+@media (max-width: 899px) {
+  .preview-panel { max-height: 40vh; }
+}
+.preview-header {
+  position: sticky; top: 0; z-index: 2;
+  background: #181825; padding: 12px 16px;
+  border-bottom: 1px solid #313244;
+  font-size: 13px; font-weight: 600; color: #a6adc8;
+  display: flex; align-items: center; gap: 8px;
+}
+.preview-header .dot { width: 8px; height: 8px; border-radius: 50%; background: #a6e3a1; }
+.preview-content {
+  padding: 12px 16px; font-family: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+  min-height: 200px;
+}
+.preview-content .yk { color: #89b4fa; }
+.preview-content .yv { color: #a6e3a1; }
+.preview-content .yd { color: #6c7086; }
+.preview-content .ys { color: #f9e2af; }
+
+/* ── Form Panel ───────────────────────────────────── */
+.form-panel { padding: 24px 28px 80px; max-width: 780px; }
+@media (max-width: 899px) { .form-panel { padding: 16px 16px 80px; } }
+
+.form-title {
+  font-size: 22px; font-weight: 700; margin-bottom: 4px; color: #1e1b4b;
+}
+.form-subtitle { color: #6b7280; font-size: 13px; margin-bottom: 28px; }
+
+/* ── Section Cards ────────────────────────────────── */
+.section {
+  background: #fff; border-radius: 10px; padding: 20px 24px;
+  margin-bottom: 16px; border: 1px solid #e5e7eb;
+  transition: box-shadow .2s;
+}
+.section:hover { box-shadow: 0 2px 12px rgba(0,0,0,.05); }
+.section-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+}
+.section-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 6px;
+  background: #eef2ff; color: #4f46e5; font-size: 12px; font-weight: 700;
+  flex-shrink: 0;
+}
+.section-label { font-size: 15px; font-weight: 600; color: #1e1b4b; }
+
+/* ── Form Controls ────────────────────────────────── */
+label.field-label { display: block; font-size: 13px; color: #4b5563; margin-bottom: 4px; font-weight: 500; }
+.helper { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+.error-text { font-size: 12px; color: #dc2626; margin-top: 4px; display: none; }
+.error-text.show { display: block; }
+
+input[type="text"], input[type="number"], input[type="password"], textarea, select {
+  width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 7px;
+  font-size: 14px; font-family: inherit; color: #1a1a2e;
+  transition: border-color .15s, box-shadow .15s; background: #fff;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none; border-color: #818cf8; box-shadow: 0 0 0 3px rgba(129,140,248,.15);
+}
+textarea { resize: vertical; min-height: 80px; }
+
+/* ── Buttons ──────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 7px; font-size: 13px;
+  font-weight: 600; cursor: pointer; border: none;
+  transition: all .15s; font-family: inherit;
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary { background: #4f46e5; color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #4338ca; }
+.btn-secondary { background: #fff; color: #4f46e5; border: 1px solid #c7d2fe; }
+.btn-secondary:hover:not(:disabled) { background: #eef2ff; }
+.btn-danger { background: #fff; color: #dc2626; border: 1px solid #fecaca; }
+.btn-danger:hover:not(:disabled) { background: #fef2f2; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-lg { padding: 12px 28px; font-size: 15px; width: 100%; justify-content: center; }
+
+/* ── Toggle ───────────────────────────────────────── */
+.toggle-group {
+  display: inline-flex; border: 1px solid #d1d5db; border-radius: 7px; overflow: hidden;
+  margin-bottom: 10px;
+}
+.toggle-btn {
+  padding: 6px 14px; font-size: 13px; cursor: pointer; border: none;
+  background: #fff; color: #6b7280; font-family: inherit; font-weight: 500;
+  transition: all .15s;
+}
+.toggle-btn.active { background: #4f46e5; color: #fff; }
+
+/* ── Debater Card ─────────────────────────────────── */
+.debater-card {
+  border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px;
+  margin-bottom: 10px; position: relative; background: #fafbfc;
+}
+.debater-card .fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+@media (max-width: 600px) { .debater-card .fields { grid-template-columns: 1fr; } }
+.debater-remove {
+  position: absolute; top: 8px; right: 8px; background: none;
+  border: none; color: #9ca3af; font-size: 16px; cursor: pointer; line-height: 1;
+  padding: 2px 5px; border-radius: 4px;
+}
+.debater-remove:hover { color: #dc2626; background: #fef2f2; }
+
+/* ── Stance Generator ─────────────────────────────── */
+.stance-box {
+  background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;
+  padding: 16px;
+}
+.stance-results { margin-top: 12px; }
+.stance-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: 6px; cursor: pointer; transition: background .1s;
+}
+.stance-item:hover { background: #e0f2fe; }
+.stance-item input[type="checkbox"] { accent-color: #4f46e5; width: 16px; height: 16px; }
+.stance-item-label { font-size: 13px; }
+.stance-item-name { font-weight: 600; }
+.stance-item-model { color: #6b7280; }
+.stance-item-style { color: #4f46e5; font-style: italic; }
+
+/* ── Alerts ───────────────────────────────────────── */
+.alert { padding: 10px 14px; border-radius: 7px; font-size: 13px; margin-top: 8px; }
+.alert-warn { background: #fefce8; border: 1px solid #fde68a; color: #92400e; }
+.alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+
+/* ── Success Card ─────────────────────────────────── */
+.success-card {
+  background: #f0fdf4; border: 1px solid #86efac; border-radius: 10px;
+  padding: 20px 24px;
+}
+.success-card h3 { color: #166534; margin-bottom: 12px; font-size: 16px; }
+.success-card .cmd-block {
+  display: flex; align-items: center; gap: 8px;
+  background: #1e1e2e; color: #cdd6f4; border-radius: 6px;
+  padding: 8px 12px; margin: 6px 0; font-family: monospace; font-size: 13px;
+}
+.success-card .cmd-block code { flex: 1; }
+.success-card .cmd-block .copy-btn {
+  background: none; border: none; color: #89b4fa; cursor: pointer;
+  font-size: 14px; padding: 2px 6px; border-radius: 4px;
+}
+.success-card .cmd-block .copy-btn:hover { background: #313244; }
+
+/* ── Spinner ──────────────────────────────────────── */
+.spinner {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid #c7d2fe; border-top-color: #4f46e5;
+  border-radius: 50%; animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── FAB ──────────────────────────────────────────── */
+.fab {
+  position: fixed; bottom: 24px; right: 24px; z-index: 100;
+  padding: 10px 16px; border-radius: 24px; font-size: 13px;
+  background: #4f46e5; color: #fff; border: none; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(79,70,229,.35); font-family: inherit; font-weight: 600;
+  transition: all .2s; display: none;
+}
+.fab:hover { background: #4338ca; box-shadow: 0 6px 18px rgba(79,70,229,.45); }
+.fab.show { display: block; }
+
+/* ── Row helpers ──────────────────────────────────── */
+.row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 120px; }
+.row-tight { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mt-8 { margin-top: 8px; } .mt-12 { margin-top: 12px; } .mt-16 { margin-top: 16px; }
+.mb-8 { margin-bottom: 8px; } .mb-12 { margin-bottom: 12px; }
+.gap-8 { gap: 8px; }
+.pw-toggle {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 16px;
+  padding: 2px;
+}
+.pw-wrap { position: relative; }
+
+/* ── Details/Collapse ─────────────────────────────── */
+details { margin-top: 8px; }
+details summary {
+  cursor: pointer; font-size: 13px; color: #6b7280; font-weight: 500;
+  user-select: none;
+}
+details summary:hover { color: #4f46e5; }
+details .details-body { margin-top: 8px; font-size: 13px; color: #4b5563; white-space: pre-wrap; }
+
+/* ── Preview inline (section 13) ──────────────────── */
+.inline-preview {
+  background: #1e1e2e; color: #cdd6f4; border-radius: 8px;
+  padding: 16px; font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px; line-height: 1.7; white-space: pre-wrap;
+  max-height: 400px; overflow-y: auto; word-break: break-all;
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ═══ LEFT: Preview Panel ═══ -->
+  <aside class="preview-panel">
+    <div class="preview-header"><span class="dot"></span>实时预览</div>
+    <div class="preview-content" id="previewContent">加载中...</div>
+  </aside>
+
+  <!-- ═══ RIGHT: Form Panel ═══ -->
+  <main class="form-panel">
+    <h1 class="form-title">辩论议题向导</h1>
+    <p class="form-subtitle">配置多模型辩论参数，生成辩论议题文件</p>
+
+    <!-- ── 1. 辩论标题 ── -->
+    <div class="section" data-section="1">
+      <div class="section-head"><span class="section-num">1</span><span class="section-label">辩论标题</span></div>
+      <input type="text" id="title" placeholder="例：AI 是否应该拥有投票权">
+      <div class="error-text" id="titleError">标题不能为空</div>
+    </div>
+
+    <!-- ── 2. 输出路径 ── -->
+    <div class="section" data-section="2">
+      <div class="section-head"><span class="section-num">2</span><span class="section-label">输出路径</span></div>
+      <input type="text" id="outputPath" placeholder="自动根据标题生成">
+      <div class="helper">生成的辩论文件保存路径</div>
+      <div class="error-text" id="outputError">输出路径不能为空</div>
+    </div>
+
+    <!-- ── 3. 轮数 ── -->
+    <div class="section" data-section="3">
+      <div class="section-head"><span class="section-num">3</span><span class="section-label">辩论轮数</span></div>
+      <input type="number" id="rounds" min="1" max="20" value="3">
+      <div class="helper">辩论轮数 (1-20)</div>
+    </div>
+
+    <!-- ── 4. API 端点 ── -->
+    <div class="section" data-section="4">
+      <div class="section-head"><span class="section-num">4</span><span class="section-label">API 端点</span></div>
+      <input type="text" id="baseUrl" placeholder="留空使用默认值">
+      <div class="helper">OpenAI 兼容 API 端点（留空使用默认值）</div>
+    </div>
+
+    <!-- ── 5. API 密钥 ── -->
+    <div class="section" data-section="5">
+      <div class="section-head"><span class="section-num">5</span><span class="section-label">API 密钥</span></div>
+      <div class="pw-wrap">
+        <input type="password" id="apiKey" placeholder="留空使用默认值">
+        <button class="pw-toggle" id="pwToggle" type="button">◉</button>
+      </div>
+      <div class="helper">API 密钥（留空使用默认值）</div>
+    </div>
+
+    <!-- ── 6. 议题正文 ── -->
+    <div class="section" data-section="6">
+      <div class="section-head"><span class="section-num">6</span><span class="section-label">议题正文</span></div>
+      <div class="toggle-group">
+        <button class="toggle-btn active" data-mode="input" id="topicModeInput">直接输入</button>
+        <button class="toggle-btn" data-mode="file" id="topicModeFile">从文件加载</button>
+      </div>
+      <div id="topicInputArea">
+        <textarea id="topicBody" rows="8" placeholder="在此输入辩论议题的详细描述..."></textarea>
+      </div>
+      <div id="topicFileArea" style="display:none">
+        <input type="file" id="topicFile" accept=".md,.txt,.markdown">
+        <textarea id="topicFileContent" rows="6" readonly style="margin-top:8px;background:#f9fafb;display:none"></textarea>
+      </div>
+      <div class="helper">议题的完整描述，将放在 YAML 元数据之后</div>
+    </div>
+
+    <!-- ── 7. 立场生成器 ── -->
+    <div class="section" data-section="7">
+      <div class="section-head"><span class="section-num">7</span><span class="section-label">立场生成器 (AI 辅助)</span></div>
+      <div class="stance-box">
+        <div style="font-weight:600;margin-bottom:10px">🤖 AI 立场生成器</div>
+        <div class="row mb-8">
+          <div>
+            <label class="field-label">生成模型</label>
+            <input type="text" id="stanceModel" value="gpt-5.2">
+          </div>
+          <div>
+            <label class="field-label">辩手数量</label>
+            <input type="number" id="stanceNum" value="3" min="2" max="10">
+          </div>
+        </div>
+        <div class="mb-8">
+          <label class="field-label">附加要求（可选）</label>
+          <input type="text" id="stancePrompt" placeholder="例：需要一个红队攻击手">
+        </div>
+        <div class="row-tight mb-8">
+          <button class="btn btn-primary btn-sm" id="stanceGenerate">生成推荐</button>
+          <button class="btn btn-secondary btn-sm" id="stanceContinue" disabled>继续生成</button>
+          <button class="btn btn-secondary btn-sm" id="stanceRegenerate" disabled>重新生成</button>
+          <span id="stanceSpinner" style="display:none"><span class="spinner"></span> 正在生成...</span>
+        </div>
+        <div id="stanceResults" class="stance-results" style="display:none"></div>
+        <div id="stanceActions" style="display:none" class="row-tight mt-8">
+          <button class="btn btn-primary btn-sm" id="stanceApply">应用选中 (0)</button>
+          <button class="btn btn-secondary btn-sm" id="stanceCheck">检查立场</button>
+        </div>
+        <div id="stanceWarnings"></div>
+        <div id="stanceMeta" style="display:none">
+          <details>
+            <summary>查看推理过程和议题角度</summary>
+            <div class="details-body" id="stanceMetaContent"></div>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 8. 辩手配置 ── -->
+    <div class="section" data-section="8">
+      <div class="section-head"><span class="section-num">8</span><span class="section-label">辩手配置</span></div>
+      <div id="debatersContainer"></div>
+      <div class="error-text" id="debatersError" style="margin-bottom:8px">至少需要 2 位辩手</div>
+      <button class="btn btn-secondary btn-sm mt-8" id="addDebater">+ 添加辩手</button>
+    </div>
+
+    <!-- ── 9. 裁判配置 ── -->
+    <div class="section" data-section="9">
+      <div class="section-head"><span class="section-num">9</span><span class="section-label">裁判配置</span></div>
+      <div class="row">
+        <div><label class="field-label">模型</label><input type="text" id="judgeModel"></div>
+        <div><label class="field-label">名称</label><input type="text" id="judgeName"></div>
+        <div><label class="field-label">最大 Token</label><input type="number" id="judgeMaxTokens" min="1000" max="32000"></div>
+      </div>
+    </div>
+
+    <!-- ── 10. 约束条件 ── -->
+    <div class="section" data-section="10">
+      <div class="section-head"><span class="section-num">10</span><span class="section-label">约束条件</span></div>
+      <textarea id="constraints" rows="3" placeholder="辩论约束条件（留空则不设置）"></textarea>
+    </div>
+
+    <!-- ── 11. 各轮任务说明 ── -->
+    <div class="section" data-section="11">
+      <div class="section-head"><span class="section-num">11</span><span class="section-label">各轮任务说明</span></div>
+      <label class="field-label">第一轮任务</label>
+      <textarea id="round1Task" rows="2"></textarea>
+      <label class="field-label mt-12">中间轮任务</label>
+      <textarea id="middleTask" rows="2"></textarea>
+      <label class="field-label mt-12">最后一轮任务</label>
+      <textarea id="finalTask" rows="2"></textarea>
+    </div>
+
+    <!-- ── 12. 裁判指令 ── -->
+    <div class="section" data-section="12">
+      <div class="section-head"><span class="section-num">12</span><span class="section-label">裁判指令</span></div>
+      <textarea id="judgeInstructions" rows="6"></textarea>
+    </div>
+
+    <!-- ── 13. 预览确认 ── -->
+    <div class="section" data-section="13">
+      <div class="section-head"><span class="section-num">13</span><span class="section-label">预览确认</span></div>
+      <div class="inline-preview" id="inlinePreview">加载中...</div>
+      <button class="btn btn-secondary btn-sm mt-8" id="refreshPreview">刷新预览</button>
+    </div>
+
+    <!-- ── 14. 提交 ── -->
+    <div class="section" data-section="14">
+      <div class="section-head"><span class="section-num">14</span><span class="section-label">生成文件</span></div>
+      <div id="submitResult"></div>
+      <button class="btn btn-primary btn-lg mt-8" id="submitBtn">生成辩论文件</button>
+    </div>
+  </main>
+</div>
+
+<!-- FAB -->
+<button class="fab" id="fabBtn">⬆ 回到当前</button>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   State
+   ═══════════════════════════════════════════════════════ */
+const state = {
+  debaters: [],
+  stances: [],         // [{name,model,style,checked}]
+  hasGenerated: false,
+  activeSectionEl: null,
+  defaults: null,
+};
+
+/* ═══════════════════════════════════════════════════════
+   Utilities
+   ═══════════════════════════════════════════════════════ */
+function $(id) { return document.getElementById(id); }
+function qs(sel) { return document.querySelector(sel); }
+function qsa(sel) { return document.querySelectorAll(sel); }
+
+function debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+async function api(path, body) {
+  const opts = body !== undefined
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    : {};
+  const r = await fetch(path, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+function highlightYaml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .split('\n').map(line => {
+      if (/^---\s*$/.test(line)) return `<span class="yd">${line}</span>`;
+      if (/^#/.test(line)) return `<span class="yd">${line}</span>`;
+      const m = line.match(/^(\s*[\w_]+)(:)(.*)/);
+      if (m) {
+        let val = m[3];
+        if (/^\s*".*"/.test(val)) val = `<span class="yv">${val}</span>`;
+        else if (/^\s*\|/.test(val)) val = `<span class="ys">${val}</span>`;
+        else if (val.trim()) val = `<span class="yv">${val}</span>`;
+        return `<span class="yk">${m[1]}</span>${m[2]}${val}`;
+      }
+      if (/^\s*-\s/.test(line)) {
+        return line.replace(/([\w_]+):/g, '<span class="yk">$1</span>:')
+                    .replace(/"([^"]*)"/g, '<span class="yv">"$1"</span>');
+      }
+      return line;
+    }).join('\n');
+}
+
+/* ═══════════════════════════════════════════════════════
+   Form ↔ Config
+   ═══════════════════════════════════════════════════════ */
+function getTopicBody() {
+  if ($('topicModeInput').classList.contains('active')) return $('topicBody').value;
+  return $('topicFileContent').value || '';
+}
+
+function collectConfig() {
+  return {
+    title: $('title').value,
+    rounds: parseInt($('rounds').value) || 3,
+    timeout: state.defaults ? state.defaults.timeout : 300,
+    max_tokens: state.defaults ? state.defaults.max_tokens : 6000,
+    base_url: $('baseUrl').value.trim(),
+    api_key: $('apiKey').value.trim(),
+    debaters: state.debaters.map(d => ({ name: d.name, model: d.model, style: d.style })),
+    judge: {
+      model: $('judgeModel').value,
+      name: $('judgeName').value,
+      max_tokens: parseInt($('judgeMaxTokens').value) || 8000,
+    },
+    constraints: $('constraints').value,
+    round1_task: $('round1Task').value,
+    middle_task: $('middleTask').value,
+    final_task: $('finalTask').value,
+    judge_instructions: $('judgeInstructions').value,
+    topic_body: getTopicBody(),
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
+   Preview
+   ═══════════════════════════════════════════════════════ */
+async function updatePreview() {
+  try {
+    const data = await api('/api/preview', collectConfig());
+    $('previewContent').innerHTML = highlightYaml(data.content);
+    $('inlinePreview').innerHTML = highlightYaml(data.content);
+  } catch (e) {
+    console.error('Preview error:', e);
+  }
+}
+const debouncedPreview = debounce(updatePreview, 300);
+
+function onFormChange() { debouncedPreview(); }
+
+/* ═══════════════════════════════════════════════════════
+   Debaters
+   ═══════════════════════════════════════════════════════ */
+function renderDebaters() {
+  const c = $('debatersContainer');
+  c.innerHTML = '';
+  state.debaters.forEach((d, i) => {
+    const card = document.createElement('div');
+    card.className = 'debater-card';
+    card.innerHTML = `
+      <button class="debater-remove" data-idx="${i}" title="移除">✕</button>
+      <div class="fields">
+        <div><label class="field-label">名称</label><input type="text" data-idx="${i}" data-field="name" value="${esc(d.name)}"></div>
+        <div><label class="field-label">模型</label><input type="text" data-idx="${i}" data-field="model" value="${esc(d.model)}"></div>
+        <div><label class="field-label">风格</label><input type="text" data-idx="${i}" data-field="style" value="${esc(d.style)}"></div>
+      </div>`;
+    c.appendChild(card);
+  });
+
+  // Bind events
+  c.querySelectorAll('.debater-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      if (state.debaters.length <= 2) {
+        alert('至少需要 2 位辩手，无法删除');
+        return;
+      }
+      state.debaters.splice(idx, 1);
+      renderDebaters();
+      onFormChange();
+    });
+  });
+  c.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const idx = parseInt(inp.dataset.idx);
+      state.debaters[idx][inp.dataset.field] = inp.value;
+      onFormChange();
+    });
+  });
+
+  // Validation
+  $('debatersError').classList.toggle('show', state.debaters.length < 2);
+}
+
+function esc(s) { return (s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+/* ═══════════════════════════════════════════════════════
+   Stances
+   ═══════════════════════════════════════════════════════ */
+function renderStances() {
+  if (state.stances.length === 0) {
+    $('stanceResults').style.display = 'none';
+    $('stanceActions').style.display = 'none';
+    return;
+  }
+  $('stanceResults').style.display = 'block';
+  $('stanceActions').style.display = 'flex';
+
+  let html = '';
+  state.stances.forEach((s, i) => {
+    html += `<label class="stance-item">
+      <input type="checkbox" data-idx="${i}" ${s.checked ? 'checked' : ''}>
+      <span class="stance-item-label">
+        <span class="stance-item-name">${esc(s.name)}</span>
+        <span class="stance-item-model">(${esc(s.model)})</span>
+        — <span class="stance-item-style">${esc(s.style)}</span>
+      </span>
+    </label>`;
+  });
+  $('stanceResults').innerHTML = html;
+
+  // Bind checkboxes
+  $('stanceResults').querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      state.stances[parseInt(cb.dataset.idx)].checked = cb.checked;
+      updateApplyCount();
+    });
+  });
+  updateApplyCount();
+}
+
+function updateApplyCount() {
+  const n = state.stances.filter(s => s.checked).length;
+  $('stanceApply').textContent = `应用选中 (${n})`;
+}
+
+async function doGenerateStances(mode) {
+  const topicBody = getTopicBody();
+  if (!topicBody.trim()) {
+    alert('请先填写议题正文（第 6 步）');
+    return;
+  }
+
+  $('stanceSpinner').style.display = 'inline-flex';
+  $('stanceGenerate').disabled = true;
+  $('stanceContinue').disabled = true;
+  $('stanceRegenerate').disabled = true;
+
+  try {
+    const body = {
+      topic_body: topicBody,
+      base_url: $('baseUrl').value.trim(),
+      api_key: $('apiKey').value.trim(),
+      model: $('stanceModel').value,
+      num_debaters: parseInt($('stanceNum').value) || 3,
+      user_prompt: $('stancePrompt').value,
+    };
+    const data = await api('/api/generate-stances', body);
+    const newStances = data.debaters.map(d => ({ ...d, checked: true }));
+
+    if (mode === 'generate' || mode === 'regenerate') {
+      if (mode === 'regenerate') {
+        // Keep checked, remove unchecked, add new
+        state.stances = state.stances.filter(s => s.checked).concat(newStances);
+      } else {
+        state.stances = newStances;
+      }
+    } else {
+      // continue: pure append
+      state.stances = state.stances.concat(newStances);
+    }
+
+    state.hasGenerated = true;
+    renderStances();
+
+    // Show meta
+    if (data.reasoning || data.topic_angles) {
+      $('stanceMeta').style.display = 'block';
+      $('stanceMetaContent').textContent =
+        (data.reasoning ? '推理过程:\n' + data.reasoning + '\n\n' : '') +
+        (data.topic_angles ? '议题角度:\n' + data.topic_angles : '');
+    }
+  } catch (e) {
+    alert('立场生成失败: ' + e.message);
+  } finally {
+    $('stanceSpinner').style.display = 'none';
+    $('stanceGenerate').disabled = false;
+    $('stanceContinue').disabled = !state.hasGenerated;
+    $('stanceRegenerate').disabled = !state.hasGenerated;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Init — load defaults and bind events
+   ═══════════════════════════════════════════════════════ */
+async function init() {
+  // Load defaults
+  try {
+    const d = await api('/api/defaults');
+    state.defaults = d;
+    $('rounds').value = d.rounds;
+    $('round1Task').value = d.round1_task || '';
+    $('middleTask').value = d.middle_task || '';
+    $('finalTask').value = d.final_task || '';
+    $('judgeInstructions').value = d.judge_instructions || '';
+    $('constraints').value = d.constraints || '';
+    $('judgeModel').value = d.judge.model || '';
+    $('judgeName').value = d.judge.name || '';
+    $('judgeMaxTokens').value = d.judge.max_tokens || 8000;
+
+    state.debaters = (d.debaters || []).map(x => ({ ...x }));
+    renderDebaters();
+    updatePreview();
+  } catch (e) {
+    console.error('Failed to load defaults:', e);
+  }
+
+  // ── Title → suggest filename ──
+  $('title').addEventListener('blur', async () => {
+    const t = $('title').value.trim();
+    if (!t) return;
+    if ($('outputPath').value.trim()) return; // don't overwrite user input
+    try {
+      const data = await api('/api/suggest-filename', { title: t });
+      $('outputPath').value = data.filename;
+    } catch (e) { /* ignore */ }
+  });
+
+  // ── Password toggle ──
+  $('pwToggle').addEventListener('click', () => {
+    const inp = $('apiKey');
+    const is = inp.type === 'password';
+    inp.type = is ? 'text' : 'password';
+    $('pwToggle').textContent = is ? '◎' : '◉';
+  });
+
+  // ── Topic mode toggle ──
+  $('topicModeInput').addEventListener('click', () => {
+    $('topicModeInput').classList.add('active');
+    $('topicModeFile').classList.remove('active');
+    $('topicInputArea').style.display = '';
+    $('topicFileArea').style.display = 'none';
+    onFormChange();
+  });
+  $('topicModeFile').addEventListener('click', () => {
+    $('topicModeFile').classList.add('active');
+    $('topicModeInput').classList.remove('active');
+    $('topicInputArea').style.display = 'none';
+    $('topicFileArea').style.display = '';
+    onFormChange();
+  });
+
+  // ── File reader ──
+  $('topicFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      $('topicFileContent').value = ev.target.result;
+      $('topicFileContent').style.display = '';
+      onFormChange();
+    };
+    reader.readAsText(file);
+  });
+
+  // ── Stance generator buttons ──
+  $('stanceGenerate').addEventListener('click', () => doGenerateStances('generate'));
+  $('stanceContinue').addEventListener('click', () => doGenerateStances('continue'));
+  $('stanceRegenerate').addEventListener('click', () => doGenerateStances('regenerate'));
+
+  // ── Apply stances to debaters ──
+  $('stanceApply').addEventListener('click', () => {
+    const selected = state.stances.filter(s => s.checked);
+    if (selected.length === 0) { alert('请至少选中一个辩手'); return; }
+    state.debaters = selected.map(s => ({ name: s.name, model: s.model, style: s.style }));
+    renderDebaters();
+    onFormChange();
+    // Scroll to debaters section
+    document.querySelector('[data-section="8"]').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  // ── Check stances ──
+  $('stanceCheck').addEventListener('click', async () => {
+    const debaters = state.stances.filter(s => s.checked).map(s => ({
+      name: s.name, model: s.model, style: s.style
+    }));
+    if (debaters.length === 0) { alert('请至少选中一个辩手'); return; }
+    try {
+      const data = await api('/api/check-stances', { debaters });
+      const w = $('stanceWarnings');
+      if (data.warnings && data.warnings.length > 0) {
+        w.innerHTML = data.warnings.map(m => `<div class="alert alert-warn">${esc(m)}</div>`).join('');
+      } else {
+        w.innerHTML = '<div class="alert alert-success">未发现问题</div>';
+      }
+    } catch (e) {
+      $('stanceWarnings').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+    }
+  });
+
+  // ── Add debater ──
+  $('addDebater').addEventListener('click', () => {
+    state.debaters.push({ name: '', model: '', style: '' });
+    renderDebaters();
+    // Focus the new card's first input
+    const cards = $('debatersContainer').querySelectorAll('.debater-card');
+    const last = cards[cards.length - 1];
+    if (last) last.querySelector('input').focus();
+  });
+
+  // ── Refresh preview ──
+  $('refreshPreview').addEventListener('click', updatePreview);
+
+  // ── Submit ──
+  $('submitBtn').addEventListener('click', handleSubmit);
+
+  // ── Global form change listener ──
+  document.querySelectorAll('input, textarea, select').forEach(el => {
+    el.addEventListener('input', onFormChange);
+    el.addEventListener('change', onFormChange);
+  });
+
+  // ── Auto-scroll on focus ──
+  document.querySelectorAll('.section').forEach(sec => {
+    sec.addEventListener('focusin', () => {
+      state.activeSectionEl = sec;
+      sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+
+  // ── IntersectionObserver for active section ──
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        qsa('.section').forEach(s => s.style.borderColor = '');
+        entry.target.style.borderColor = '#818cf8';
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  qsa('.section').forEach(sec => observer.observe(sec));
+
+  // ── FAB ──
+  const fab = $('fabBtn');
+  window.addEventListener('scroll', debounce(() => {
+    fab.classList.toggle('show', window.scrollY > 300);
+  }, 100));
+  fab.addEventListener('click', () => {
+    if (state.activeSectionEl) {
+      state.activeSectionEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   Submit
+   ═══════════════════════════════════════════════════════ */
+async function handleSubmit() {
+  // Validate
+  let valid = true;
+
+  if (!$('title').value.trim()) {
+    $('titleError').classList.add('show'); valid = false;
+    $('title').focus();
+  } else {
+    $('titleError').classList.remove('show');
+  }
+
+  if (!$('outputPath').value.trim()) {
+    $('outputError').classList.add('show'); valid = false;
+    if (valid) $('outputPath').focus();
+  } else {
+    $('outputError').classList.remove('show');
+  }
+
+  if (state.debaters.length < 2) {
+    $('debatersError').classList.add('show'); valid = false;
+  } else {
+    $('debatersError').classList.remove('show');
+  }
+
+  if (!valid) return;
+
+  const config = collectConfig();
+  config.output_path = $('outputPath').value.trim();
+
+  $('submitBtn').disabled = true;
+  $('submitBtn').innerHTML = '<span class="spinner"></span> 正在生成...';
+
+  try {
+    const data = await api('/api/submit', config);
+    $('submitResult').innerHTML = `
+      <div class="success-card">
+        <h3>✅ 文件已生成！</h3>
+        <p style="margin-bottom:8px"><strong>文件路径：</strong>${esc(data.path)}</p>
+        <p style="font-size:13px;color:#4b5563;margin-bottom:6px">运行辩论：</p>
+        <div class="cmd-block">
+          <code id="runCmd">${esc(data.run_cmd)}</code>
+          <button class="copy-btn" onclick="copyCmd('runCmd')">📋</button>
+        </div>
+        <p style="font-size:13px;color:#4b5563;margin-bottom:6px">试运行（仅校验）：</p>
+        <div class="cmd-block">
+          <code id="dryrunCmd">${esc(data.dryrun_cmd)}</code>
+          <button class="copy-btn" onclick="copyCmd('dryrunCmd')">📋</button>
+        </div>
+      </div>`;
+    $('submitBtn').textContent = '✅ 已生成';
+  } catch (e) {
+    $('submitResult').innerHTML = `<div class="alert alert-error" style="margin-bottom:8px">${esc(e.message)}</div>`;
+    $('submitBtn').disabled = false;
+    $('submitBtn').textContent = '生成辩论文件';
+  }
+}
+
+function copyCmd(id) {
+  const text = $(id).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = $(id).parentElement.querySelector('.copy-btn');
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = '📋'; }, 1500);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   Boot
+   ═══════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

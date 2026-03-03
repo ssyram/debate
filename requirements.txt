@@ -1,0 +1,5 @@
+httpx
+pyyaml
+rich>=13.0
+click>=8.0
+flask>=3.0
