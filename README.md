@@ -97,8 +97,11 @@ python debate.py my_topic.md --dry-run
 
 优先级（从高到低）：
 
-1. 话题文件 YAML 中的 `base_url` / `api_key`
-2. 环境变量 `DEBATE_BASE_URL` / `DEBATE_API_KEY`
+1. 角色级配置（`debaters[].base_url` / `debaters[].api_key`，以及 `judge.base_url` / `judge.api_key`）
+2. 话题文件全局 `base_url` / `api_key`
+3. 环境变量 `DEBATE_BASE_URL` / `DEBATE_API_KEY`
+
+说明：你可以为不同辩手配置不同供应商端点和密钥；未配置时自动回退到全局配置或环境变量。
 
 建议将 API 密钥配置为环境变量，避免写入版本控制：
 
@@ -119,8 +122,8 @@ export DEBATE_BASE_URL=your_api_base_url
 | `max_tokens` | int | 6000 | 辩手单次输出 token 上限 |
 | `base_url` | string | env/fallback | OpenAI 兼容 API 端点 |
 | `api_key` | string | env/fallback | API 密钥 |
-| `debaters` | list | 3 个默认辩手 | 每项含 `name` / `model` / `style` |
-| `judge` | object | claude-opus-4-6 | 含 `model` / `name` / `max_tokens` |
+| `debaters` | list | 3 个默认辩手 | 每项含 `name` / `model` / `style`，可选 `base_url` / `api_key` |
+| `judge` | object | claude-opus-4-6 | 含 `model` / `name` / `max_tokens`，可选 `base_url` / `api_key` |
 | `constraints` | string | `""` | 约束条件，注入每位辩手的 system prompt |
 | `round1_task` | string | 内置默认 | 第一轮任务说明 |
 | `middle_task` | string | 内置默认 | 中间轮任务说明 |
@@ -155,6 +158,9 @@ judge:
 ## 6. 立场生成器
 
 `stance.py` 是独立的 LLM 驱动立场生成器，根据议题自动推荐辩手配置。
+
+说明：立场生成结果若未返回 `model`，系统会默认使用 `gpt-5.2`。
+在 TUI/Web 向导中，你可以在后续步骤手动修改每位辩手的 `model`，并可按需填写 `base_url` / `api_key`（可留空）。
 
 ### 独立 CLI
 

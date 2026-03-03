@@ -58,6 +58,8 @@ class StanceItem:
     name: str
     model: str
     style: str
+    base_url: str = ""
+    api_key: str = ""
     selected: bool = True
     source: str = "llm"  # "llm" or "custom"
 
@@ -188,7 +190,7 @@ def step_base_url(
     _redraw()
     result = curses_text_input(
         stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w,
-        default=current or DEFAULT_BASE_URL,
+        default=current,
         redraw=_redraw,
     )
     if result is StepResult.BACK:
@@ -217,7 +219,7 @@ def step_api_key(
     _redraw()
     result = curses_text_input(
         stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w,
-        default=current or DEFAULT_API_KEY,
+        default=current,
         redraw=_redraw,
     )
     if result is StepResult.BACK:
@@ -466,7 +468,7 @@ def step_stance_generator(
     for d in result.debaters:
         items.append(StanceItem(
             name=d.name, model=d.model, style=d.style,
-            selected=True, source="llm",
+            selected=True, source="llm", base_url="", api_key="",
         ))
 
     # --- Phase 3: Interactive workspace ---
@@ -525,11 +527,16 @@ def step_stance_generator(
             debater_list = []
             for it in items:
                 if it.selected:
-                    debater_list.append({
+                    row = {
                         "name": it.name,
                         "model": it.model,
                         "style": it.style,
-                    })
+                    }
+                    if it.base_url.strip():
+                        row["base_url"] = it.base_url.strip()
+                    if it.api_key.strip():
+                        row["api_key"] = it.api_key.strip()
+                    debater_list.append(row)
             return debater_list
 
         if key in (ord("a"), ord("A")):
@@ -559,7 +566,7 @@ def step_stance_generator(
             for d in new_result.debaters:
                 items.append(StanceItem(
                     name=d.name, model=d.model, style=d.style,
-                    selected=True, source="llm",
+                    selected=True, source="llm", base_url="", api_key="",
                 ))
             if items:
                 cursor = min(cursor, len(items) - 1)
@@ -585,7 +592,7 @@ def step_stance_generator(
             for d in new_result.debaters:
                 items.append(StanceItem(
                     name=d.name, model=d.model, style=d.style,
-                    selected=True, source="llm",
+                    selected=True, source="llm", base_url="", api_key="",
                 ))
             cursor = 0
             scroll_top = 0
@@ -609,6 +616,8 @@ def step_stance_generator(
                     items[cursor].name = edited["name"]
                     items[cursor].model = edited["model"]
                     items[cursor].style = edited["style"]
+                    items[cursor].base_url = edited["base_url"]
+                    items[cursor].api_key = edited["api_key"]
             continue
         if key in (ord("v"), ord("V")):
             # Stance check
@@ -649,11 +658,13 @@ def _add_custom_debater(
     lo: Layout,
     items: list[StanceItem],
 ) -> None:
-    """Add a custom debater via 3 sequential text inputs."""
+    """Add a custom debater via sequential text inputs."""
     fields = [
         ("辩手名称 (name):", ""),
-        ("模型 ID (model):", ""),
+        ("模型 ID (model, 默认 gpt-5.2):", "gpt-5.2"),
         ("立场描述 (style):", ""),
+        ("API Base URL (可选):", ""),
+        ("API Key (可选):", ""),
     ]
     values: list[str] = []
 
@@ -683,12 +694,13 @@ def _add_custom_debater(
         if result is StepResult.BACK:
             return
         val = result.strip()
-        if not val:
+        if not val and len(values) < 3:
             return  # Cancel if any field empty
-        values.append(val)
+        values.append(val if val else default)
 
     items.append(StanceItem(
         name=values[0], model=values[1], style=values[2],
+        base_url=values[3], api_key=values[4],
         selected=True, source="custom",
     ))
 
@@ -698,11 +710,13 @@ def _edit_stance_item(
     lo: Layout,
     item: StanceItem,
 ) -> dict[str, str] | None:
-    """Edit an existing stance item via 3 sequential text inputs. Returns dict or None if cancelled."""
+    """Edit an existing stance item via sequential text inputs. Returns dict or None if cancelled."""
     fields = [
         ("辩手名称 (name):", item.name),
-        ("模型 ID (model):", item.model),
+        ("模型 ID (model):", item.model or "gpt-5.2"),
         ("立场描述 (style):", item.style),
+        ("API Base URL (可选):", item.base_url),
+        ("API Key (可选):", item.api_key),
     ]
     values: list[str] = []
 
@@ -734,7 +748,13 @@ def _edit_stance_item(
         val = result.strip()
         values.append(val if val else default)
 
-    return {"name": values[0], "model": values[1], "style": values[2]}
+    return {
+        "name": values[0],
+        "model": values[1] or "gpt-5.2",
+        "style": values[2],
+        "base_url": values[3],
+        "api_key": values[4],
+    }
 
 
 def _show_stance_warnings(
@@ -859,7 +879,6 @@ def step_debaters(
             new_d = _edit_single_debater(stdscr, preview, lo, d)
             if new_d is not None:
                 debaters[cursor] = new_d
-
         elif key in (ord("d"), ord("D")):
             if cursor < len(debaters):
                 if len(debaters) <= 2:
@@ -882,13 +901,15 @@ def _edit_single_debater(
     lo: Layout,
     current: dict[str, str] | None,
 ) -> dict[str, str] | None:
-    """Edit or add a single debater via 3 text inputs. Returns dict or None if cancelled."""
+    """Edit or add a single debater via text inputs. Returns dict or None if cancelled."""
     is_new = current is None
     title = "添加辩手" if is_new else "编辑辩手"
     fields = [
         ("名称 (name):", current.get("name", "") if current else ""),
-        ("模型 (model):", current.get("model", "") if current else ""),
+        ("模型 (model):", current.get("model", "gpt-5.2") if current else "gpt-5.2"),
         ("立场 (style):", current.get("style", "") if current else ""),
+        ("API Base URL (可选):", current.get("base_url", "") if current else ""),
+        ("API Key (可选):", current.get("api_key", "") if current else ""),
     ]
     values: list[str] = []
 
@@ -915,11 +936,20 @@ def _edit_single_debater(
         if result is StepResult.BACK:
             return None
         val = result.strip()
-        if not val and is_new:
+        if not val and is_new and len(values) < 3:
             return None
         values.append(val if val else default)
 
-    return {"name": values[0], "model": values[1], "style": values[2]}
+    output = {
+        "name": values[0],
+        "model": values[1] or "gpt-5.2",
+        "style": values[2],
+    }
+    if values[3].strip():
+        output["base_url"] = values[3].strip()
+    if values[4].strip():
+        output["api_key"] = values[4].strip()
+    return output
 
 
 # ---------------------------------------------------------------------------

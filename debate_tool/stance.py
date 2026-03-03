@@ -30,7 +30,7 @@ import httpx
 class StanceRecommendation:
     """A single recommended debater configuration."""
     name: str   # Display name, e.g. "GPT-5.2"
-    model: str  # Model ID, e.g. "gpt-5.2"
+    model: str  # Model ID, defaults to gpt-5.2 if missing
     style: str  # Stance description, e.g. "精简派：追求最少改动、最低误伤风险"
 
 
@@ -69,8 +69,9 @@ def _build_system_prompt(num_debaters: int, user_prompt: str) -> str:
         "\n"
         "每个辩手需要：\n"
         "1. name: 显示名称（通常是 LLM 模型名，如 GPT-5.2、Kimi-K2.5、Sonnet-4-6）\n"
-        "2. model: 模型 ID（如 gpt-5.2、kimi-k2.5、claude-sonnet-4-6）\n"
+        "2. model: 模型 ID（可选；若不提供将默认使用 gpt-5.2）\n"
         '3. style: 立场描述（格式："立场名：具体说明"，如 "精简派：追求最少改动、最低误伤风险"）\n'
+        "   - 不要输出 URL 或 API Key\n"
         "\n"
         "立场设计原则：\n"
         "- 辩手之间应形成有效对立或互补，避免同质化\n"
@@ -120,6 +121,15 @@ def _extract_json(text: str) -> dict[str, Any] | None:
     return None
 
 
+def _resolve_model(payload: dict[str, Any]) -> str:
+    model_name = payload.get("model", "")
+    if isinstance(model_name, str):
+        model_name = model_name.strip()
+    else:
+        model_name = ""
+    return model_name or "gpt-5.2"
+
+
 # ── Core async function ──────────────────────────────────────────────
 
 async def generate_stances(
@@ -136,8 +146,8 @@ async def generate_stances(
 
     Args:
         topic_text: The debate topic body text.
-        base_url: API base URL (falls back to env / hardcoded default).
-        api_key: API key (falls back to env / hardcoded default).
+        base_url: API base URL (falls back to env).
+        api_key: API key (falls back to env).
         model: LLM model ID to use.
         num_debaters: Number of debater configurations to recommend.
         user_prompt: Additional user instructions appended to system prompt.
@@ -206,14 +216,17 @@ async def generate_stances(
         )
 
     # Build StanceResult from parsed data
-    debaters = [
-        StanceRecommendation(
-            name=d.get("name", ""),
-            model=d.get("model", ""),
-            style=d.get("style", ""),
+    debaters: list[StanceRecommendation] = []
+    for d in parsed.get("debaters", []):
+        if not isinstance(d, dict):
+            continue
+        debaters.append(
+            StanceRecommendation(
+                name=str(d.get("name", "")).strip(),
+                model=_resolve_model(d),
+                style=str(d.get("style", "")).strip(),
+            )
         )
-        for d in parsed.get("debaters", [])
-    ]
     topic_angles = parsed.get("topic_angles", [])
     reasoning = parsed.get("reasoning", "")
 
@@ -286,7 +299,11 @@ def format_stances_json(result: StanceResult) -> str:
     """Format StanceResult as pretty JSON."""
     data = {
         "debaters": [
-            {"name": d.name, "model": d.model, "style": d.style}
+            {
+                "name": d.name,
+                "model": d.model,
+                "style": d.style,
+            }
             for d in result.debaters
         ],
         "topic_angles": result.topic_angles,
@@ -382,6 +399,10 @@ def main() -> None:
         num_debaters=args.num,
         user_prompt=args.prompt,
     )
+
+    if not result.debaters and result.reasoning.startswith("Missing API"):
+        print(f"[stance] ERROR: {result.reasoning}", file=sys.stderr)
+        sys.exit(2)
 
     if not result.debaters:
         print("[stance] WARNING: no debaters generated", file=sys.stderr)

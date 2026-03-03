@@ -137,6 +137,12 @@ def _yaml_debaters(debaters: list[dict]) -> str:
         lines.append(f'  - name: "{d["name"]}"')
         lines.append(f'    model: "{d["model"]}"')
         lines.append(f'    style: "{d["style"]}"')
+        debater_base_url = str(d.get("base_url", "")).strip()
+        if debater_base_url:
+            lines.append(f'    base_url: "{debater_base_url}"')
+        debater_api_key = str(d.get("api_key", "")).strip()
+        if debater_api_key:
+            lines.append(f'    api_key: "{debater_api_key}"')
     return "\n".join(lines)
 
 
@@ -147,6 +153,12 @@ def _yaml_judge(judge: dict) -> str:
         f'  name: "{judge["name"]}"',
         f'  max_tokens: {judge.get("max_tokens", 8000)}',
     ]
+    judge_base_url = str(judge.get("base_url", "")).strip()
+    if judge_base_url:
+        lines.append(f'  base_url: "{judge_base_url}"')
+    judge_api_key = str(judge.get("api_key", "")).strip()
+    if judge_api_key:
+        lines.append(f'  api_key: "{judge_api_key}"')
     return "\n".join(lines)
 
 

@@ -11,7 +11,6 @@ from rich.console import Console
 
 from debate_tool.core import (
     DEFAULT_DEBATERS, DEFAULT_JUDGE, DEFAULT_ROUNDS,
-    DEFAULT_BASE_URL, DEFAULT_API_KEY,
     DEFAULT_ROUND1_TASK, DEFAULT_MIDDLE_TASK, DEFAULT_FINAL_TASK,
     DEFAULT_JUDGE_INSTRUCTIONS, DEFAULT_CONSTRAINTS,
     is_curses_supported, detect_platform,
@@ -94,8 +93,8 @@ def wizard_curses(
     title = ""
     output_path = output_hint or ""
     rounds = DEFAULT_ROUNDS
-    base_url = DEFAULT_BASE_URL
-    api_key = DEFAULT_API_KEY
+    base_url = ""
+    api_key = ""
     topic_body = topic_file_content or ""
     debaters = [copy.deepcopy(d) for d in DEFAULT_DEBATERS]
     judge = copy.deepcopy(DEFAULT_JUDGE)

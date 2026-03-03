@@ -76,7 +76,7 @@ async def call_llm(model: str, system: str, user_content: str,
                    *, temperature: float = 0.7, max_tokens: int = 6000,
                    timeout: int = 300,
                    base_url: str = "", api_key: str = "") -> str:
-    """调用 LLM API，支持 per-debate 的 base_url/api_key 覆盖。"""
+    """调用 LLM API，支持按角色覆盖 base_url/api_key。"""
     url = base_url or ENV_BASE_URL
     key = api_key or ENV_API_KEY
     if not url:
@@ -168,8 +168,8 @@ async def run(cfg: dict, topic_path: Path):
     max_tokens = cfg["max_tokens"]
     constraints = cfg["constraints"]
     # Per-debate API config
-    debate_base_url = cfg.get("base_url", "")
-    debate_api_key = cfg.get("api_key", "")
+    debate_base_url = (cfg.get("base_url", "") or ENV_BASE_URL).strip()
+    debate_api_key = (cfg.get("api_key", "") or ENV_API_KEY).strip()
 
     print("=" * 60)
     print(f"  {cfg['title']}")
@@ -203,12 +203,14 @@ async def run(cfg: dict, topic_path: Path):
 
         async def speak(d, rnd=rnd, task_desc=task_desc,
                         user_ctx=user_ctx, constraints_block=constraints_block):
+            debater_base_url = (d.get("base_url", "") or debate_base_url).strip()
+            debater_api_key = (d.get("api_key", "") or debate_api_key).strip()
             sys_prompt = (f"你是「{d['name']}」，风格为「{d['style']}」。第 {rnd} 轮。\n\n"
                           f"任务：{task_desc}"
                           f"{constraints_block}")
             return await call_llm(d["model"], sys_prompt, user_ctx,
                                   max_tokens=max_tokens, timeout=timeout,
-                                  base_url=debate_base_url, api_key=debate_api_key)
+                                  base_url=debater_base_url, api_key=debater_api_key)
 
         mark = log.entries[-1]["seq"] if log.entries else 0
         results = await asyncio.gather(*[speak(d) for d in debaters])
@@ -242,11 +244,13 @@ async def run(cfg: dict, topic_path: Path):
                  f"- 简洁、可操作")
 
     judge_max_tokens = judge.get("max_tokens", 8000)
+    judge_base_url = (judge.get("base_url", "") or debate_base_url).strip()
+    judge_api_key = (judge.get("api_key", "") or debate_api_key).strip()
     summary = await call_llm(judge["model"], judge_sys,
                              f"全部辩论（压缩版）：\n\n{log.compact()}",
                              temperature=0.3, max_tokens=judge_max_tokens,
                              timeout=timeout,
-                             base_url=debate_base_url, api_key=debate_api_key)
+                             base_url=judge_base_url, api_key=judge_api_key)
     log.add(judge["name"], summary, "summary")
 
     sp = out_dir / f"{stem}_debate_summary.md"
@@ -263,13 +267,37 @@ def _mask_key(key: str) -> str:
     return key[:3] + "****" + key[-4:]
 
 
-def _validate_api_config(base_url: str, api_key: str) -> list[str]:
-    missing: list[str] = []
-    if not base_url.strip():
-        missing.append("base_url")
-    if not api_key.strip():
-        missing.append("api_key")
-    return missing
+def _validate_api_config(cfg: dict) -> list[str]:
+    issues: list[str] = []
+
+    debate_base_url = (cfg.get("base_url", "") or ENV_BASE_URL).strip()
+    debate_api_key = (cfg.get("api_key", "") or ENV_API_KEY).strip()
+
+    for idx, debater in enumerate(cfg.get("debaters", []), start=1):
+        debater_name = debater.get("name", f"debater#{idx}")
+        url = (debater.get("base_url", "") or debate_base_url).strip()
+        key = (debater.get("api_key", "") or debate_api_key).strip()
+        missing_fields: list[str] = []
+        if not url:
+            missing_fields.append("base_url")
+        if not key:
+            missing_fields.append("api_key")
+        if missing_fields:
+            issues.append(f"debaters[{idx}]({debater_name}): " + ", ".join(missing_fields))
+
+    judge = cfg.get("judge", {}) or {}
+    judge_name = judge.get("name", "judge")
+    judge_url = (judge.get("base_url", "") or debate_base_url).strip()
+    judge_key = (judge.get("api_key", "") or debate_api_key).strip()
+    judge_missing: list[str] = []
+    if not judge_url:
+        judge_missing.append("base_url")
+    if not judge_key:
+        judge_missing.append("api_key")
+    if judge_missing:
+        issues.append(f"judge({judge_name}): " + ", ".join(judge_missing))
+
+    return issues
 
 
 # ── CLI ───────────────────────────────────────────────────
@@ -310,10 +338,10 @@ def main():
     if args.rounds is not None:
         cfg["rounds"] = args.rounds
 
-    # 解析实际使用的 API 配置（用于 dry-run 显示）
-    effective_url = cfg["base_url"] or ENV_BASE_URL
-    effective_key = cfg["api_key"] or ENV_API_KEY
-    missing_api = _validate_api_config(effective_url, effective_key)
+    # 解析与校验 API 配置
+    effective_url = (cfg["base_url"] or ENV_BASE_URL).strip()
+    effective_key = (cfg["api_key"] or ENV_API_KEY).strip()
+    api_issues = _validate_api_config(cfg)
 
     # Dry run — 打印配置后退出
     if args.dry_run:
@@ -345,9 +373,11 @@ def main():
             print(f"  (来源: 环境变量)")
         else:
             print(f"  (来源: 未设置)")
-        if missing_api:
-            print("\n  ⚠️ API 配置不完整: " + ", ".join(missing_api))
-            print("    请在 front-matter 或环境变量中提供 base_url / api_key")
+        if api_issues:
+            print("\n  ⚠️ API 配置不完整:")
+            for issue in api_issues:
+                print(f"    - {issue}")
+            print("    请通过 front-matter（全局/辩手/裁判）或环境变量补齐 base_url / api_key")
         print(f"\n  Round 1: {cfg['round1_task'][:80]}...")
         print(f"  Middle:  {cfg['middle_task'][:80]}...")
         print(f"  Final:   {cfg['final_task'][:80]}...")
@@ -356,10 +386,10 @@ def main():
         print(f"\n✅ 配置有效")
         return
 
-    if missing_api:
+    if api_issues:
         print(
-            "❌ 缺少 API 配置: " + ", ".join(missing_api) +
-            "。请设置 DEBATE_BASE_URL / DEBATE_API_KEY 或在 topic front-matter 提供 base_url / api_key",
+            "❌ 缺少 API 配置:\n  - " + "\n  - ".join(api_issues) +
+            "\n请设置 DEBATE_BASE_URL / DEBATE_API_KEY，或在 topic front-matter 提供全局/辩手/裁判级 base_url / api_key",
             file=sys.stderr,
         )
         sys.exit(2)

@@ -25,6 +25,9 @@ env/
 *_debate_log.md
 *_debate_summary.md
 
+# Local manual integration tests (sensitive)
+local_test/
+
 # Editor / OS
 .DS_Store
 .idea/

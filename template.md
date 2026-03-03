@@ -43,6 +43,8 @@ debaters:
   - name: "GPT-5.2"
     model: "gpt-5.2"
     style: "务实工程派"
+    # base_url: "your_api_base_url"
+    # api_key: "your_api_key"
   - name: "Kimi-K2.5"
     model: "kimi-k2.5"
     style: "创新挑战派"
@@ -55,6 +57,8 @@ judge:
   model: "claude-opus-4-6"
   name: "Opus-4-6 (裁判)"
   max_tokens: 8000
+  # base_url: "your_api_base_url"
+  # api_key: "your_api_key"
 
 # ─── 约束条件 (可选) ──────────────────────────────────
 # 注入每个辩手的 system prompt, 作为不可违反的规则。
