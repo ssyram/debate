@@ -28,7 +28,9 @@ def init_colors() -> None:
     """Initialize curses color pairs."""
     curses.start_color()
     curses.use_default_colors()
-    curses.set_escdelay(25)  # Reduce Esc key delay from 1000ms default
+    # set_escdelay is not available on Windows curses
+    if hasattr(curses, 'set_escdelay'):
+        curses.set_escdelay(25)  # Reduce Esc key delay from 1000ms default
     curses.init_pair(CP_INPUT_HL, curses.COLOR_BLACK, curses.COLOR_CYAN)
     curses.init_pair(CP_HEADER, curses.COLOR_YELLOW, -1)
     curses.init_pair(CP_FILLED, curses.COLOR_GREEN, -1)
