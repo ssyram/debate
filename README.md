@@ -75,8 +75,11 @@ debate-tool run my_topic.md --cross-exam 3
 # 每轮都质询
 debate-tool run my_topic.md --cross-exam -1
 
-# 启用收敛早停
+# 启用收敛早停（默认阈值 55%）
 debate-tool run my_topic.md --early-stop
+
+# 自定义早停阈值（60%）
+debate-tool run my_topic.md --early-stop 0.6
 
 # 质询 + 早停
 debate-tool run my_topic.md --cross-exam --early-stop
@@ -121,7 +124,7 @@ export DEBATE_BASE_URL=your_api_base_url
 | `timeout` | int | 300 | 单次 API 超时（秒） |
 | `max_tokens` | int | 6000 | 辩手单次输出 token 上限 |
 | `cross_exam` | int | `0` | 质询轮数 (0=关, 1=R1后, -1=每轮) |
-| `early_stop` | bool | `false` | 启用收敛早停 |
+| `early_stop` | bool/float | `false` | 收敛早停: `true` 用默认阈值 55%, 或指定 0~1 的浮点数 |
 | `base_url` | string | env/fallback | OpenAI 兼容 API 端点 |
 | `api_key` | string | env/fallback | API 密钥 |
 | `debaters` | list | 3 个默认辩手 | 每项含 `name` / `model` / `style`，可选 `base_url` / `api_key` |
@@ -183,13 +186,17 @@ cross_exam: -1   # 每轮都质询
 
 ### 收敛早停 (`--early-stop`)
 
-每轮结束后检查所有辩手发言的字符三元组 Jaccard 相似度，若两两平均相似度达到阈值 (默认 55%) 则跳过剩余轮次，直接进入裁判阶段。
+每轮结束后检查所有辩手发言的字符三元组 Jaccard 相似度，若两两平均相似度达到阈值则跳过剩余轮次，直接进入裁判阶段。
+
+- `--early-stop` — 使用默认阈值 55%
+- `--early-stop 0.6` — 自定义阈值 60%
 
 ```yaml
-early_stop: true
+early_stop: true       # 默认阈值 55%
+early_stop: 0.7        # 自定义阈值 70%
 ```
 
-可与 `--deep` 组合使用。
+可与 `--cross-exam` 组合使用。
 
 ## 5. 立场生成器
 

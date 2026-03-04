@@ -37,8 +37,10 @@ rounds: 3
 
 # 早停 (默认: false)
 # 每轮后检查观点收敛度, 达到阈值则跳过剩余轮次
-# 可通过 CLI flag 开启: debate-tool run topic.md --early-stop
+# true = 使用默认阈值 55%; 也可指定 0~1 之间的浮点数
+# 可通过 CLI flag 开启: debate-tool run topic.md --early-stop [T]
 # early_stop: true
+# early_stop: 0.6
 
 # ─── API 配置 (可选) ───────────────────────────────────
 # 不填则使用环境变量 DEBATE_BASE_URL / DEBATE_API_KEY,

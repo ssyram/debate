@@ -19,7 +19,8 @@ Run `echo $DEBATE_TOOL_DIR` to find it. If the variable is unset, ask the user w
 - `run <topic.md> --cross-exam` — add cross-examination after R1 (round-robin challenges)
 - `run <topic.md> --cross-exam 3` — cross-exam after R1, R2, and R3
 - `run <topic.md> --cross-exam -1` — cross-exam after every round (except last)
-- `run <topic.md> --early-stop` — enable convergence early-stop
+- `run <topic.md> --early-stop` — enable convergence early-stop (default threshold 55%)
+- `run <topic.md> --early-stop 0.6` — early-stop with custom threshold
 - `stance <topic.md>` — generate debater stance recommendations via LLM
 
 ### Step 3: Create the Topic File
@@ -33,7 +34,7 @@ The topic file format uses YAML front-matter between `---` delimiters, followed 
 title: "辩论标题"
 rounds: 3
 # cross_exam: 1       # 质询轮数 (0=不质询, 1=R1后, -1=每轮)
-# early_stop: true    # 启用收敛早停
+# early_stop: true    # 收敛早停 (true=默认阈值55%, 或指定0~1浮点数如 0.6)
 # timeout: 300
 # max_tokens: 6000
 
@@ -85,7 +86,7 @@ judge:
 | `timeout` | int | 300 | API 超时秒数 |
 | `max_tokens` | int | 6000 | 辩手单次输出 token 上限 |
 | `cross_exam` | int | 0 | 质询轮数 (0=关, 1=R1后, -1=每轮) |
-| `early_stop` | bool | false | 启用收敛早停 |
+| `early_stop` | bool/float | false | 收敛早停: `true`=默认阈值55%, 或 0~1 浮点数 |
 | `base_url` | string | env var | OpenAI 兼容 API 端点 |
 | `api_key` | string | env var | API key |
 | `debaters` | list | 3 defaults | 辩手配置列表 (>=2) |
@@ -142,6 +143,7 @@ The `--cross-exam` flag adds cross-examination rounds where each debater challen
 To enable early-stop (skip remaining rounds if debaters converge):
 ```bash
 cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --early-stop
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --early-stop 0.6  # custom threshold
 ```
 
 The debate will:
