@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>辩论实时查看器</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+:root {
+  --bg: #0f0f1a;
+  --bg-card: #1a1a2e;
+  --bg-card-hover: #1f1f35;
+  --bg-input: #16162a;
+  --border: #2a2a45;
+  --border-focus: #818cf8;
+  --text: #e0e0f0;
+  --text-dim: #8888a8;
+  --text-muted: #5a5a78;
+  --accent: #818cf8;
+  --accent-bg: rgba(129,140,248,.12);
+  --green: #86efac;
+  --green-dim: #22c55e;
+  --yellow: #fde68a;
+  --red: #fca5a5;
+  --orange: #fdba74;
+  --cyan: #67e8f9;
+  --radius: 10px;
+  --radius-sm: 7px;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6; font-size: 14px;
+  overflow: hidden; height: 100vh;
+}
+::selection { background: rgba(129,140,248,.35); }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a3a55; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #5a5a78; }
+
+/* ── Layout ── */
+.app { display: flex; flex-direction: column; height: 100vh; }
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 20px; background: #12121f;
+  border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 10;
+}
+.topbar-title { font-size: 16px; font-weight: 700; }
+.topbar-title span { color: var(--accent); }
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.badge::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+}
+.badge-idle { background: #1f1f35; color: var(--text-dim); }
+.badge-idle::before { background: var(--text-dim); }
+.badge-running { background: rgba(34,197,94,.12); color: var(--green); }
+.badge-running::before { background: var(--green); animation: pulse-dot 1.5s ease infinite; }
+.badge-judging { background: rgba(129,140,248,.12); color: var(--accent); }
+.badge-judging::before { background: var(--accent); animation: pulse-dot 1.2s ease infinite; }
+.badge-done { background: rgba(134,239,172,.12); color: var(--green); }
+.badge-done::before { background: var(--green); }
+.badge-error { background: rgba(252,165,165,.12); color: var(--red); }
+.badge-error::before { background: var(--red); }
+.round-counter { font-size: 13px; color: var(--text-dim); font-weight: 600; }
+.topbar-spacer { flex: 1; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Left Sidebar ── */
+.sidebar {
+  width: 200px; flex-shrink: 0; background: #12121f;
+  border-right: 1px solid var(--border); display: flex; flex-direction: column;
+  overflow-y: auto; padding: 12px 0;
+}
+.sidebar-section { padding: 4px 14px; font-size: 11px; color: var(--text-muted);
+  font-weight: 600; text-transform: uppercase; letter-spacing: .8px; margin-top: 8px; }
+.sidebar-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; cursor: pointer; transition: background .15s;
+  font-size: 13px; border-left: 3px solid transparent;
+}
+.sidebar-item:hover { background: rgba(255,255,255,.04); }
+.sidebar-item.active { background: var(--accent-bg); border-left-color: var(--accent); color: var(--accent); }
+.sidebar-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.dot-idle { background: var(--text-muted); }
+.dot-active { background: var(--green); animation: pulse-dot 1.5s ease infinite; }
+.dot-done { background: var(--green); }
+.dot-waiting { background: var(--yellow); animation: pulse-dot 1s ease infinite; }
+.sidebar-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-status { font-size: 11px; color: var(--text-muted); }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
+/* ── Center Panel ── */
+.center {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  min-width: 0;
+}
+.log-container {
+  flex: 1; overflow-y: auto; padding: 16px 20px; scroll-behavior: smooth;
+}
+
+.round-separator {
+  display: flex; align-items: center; gap: 10px;
+  margin: 20px 0 12px; color: var(--text-muted); font-size: 12px; font-weight: 600;
+}
+.round-separator::before, .round-separator::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+.log-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 10px;
+  transition: border-color .2s, box-shadow .2s;
+  animation: card-in .3s ease;
+}
+.log-card:hover { border-color: #3a3a55; }
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.log-card-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; cursor: pointer; user-select: none;
+}
+.log-card-icon { font-size: 16px; flex-shrink: 0; }
+.log-card-name { font-weight: 600; font-size: 13px; }
+.log-card-model {
+  font-size: 11px; color: var(--text-dim); background: rgba(255,255,255,.06);
+  padding: 1px 6px; border-radius: 4px;
+}
+.log-card-time { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+.log-card-expand { color: var(--text-muted); font-size: 12px; margin-left: 4px; transition: transform .2s; }
+.log-card.expanded .log-card-expand { transform: rotate(180deg); }
+.log-card-body {
+  padding: 0 14px 12px; font-size: 13px; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word;
+  color: #c8c8e0; max-height: 60px; overflow: hidden;
+  transition: max-height .3s ease;
+}
+.log-card.expanded .log-card-body { max-height: 5000px; }
+.log-card-body-fade {
+  position: relative;
+}
+.log-card:not(.expanded) .log-card-body-fade::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+  height: 30px; background: linear-gradient(transparent, var(--bg-card));
+}
+
+/* Generating animation card */
+.log-card-generating {
+  border: 1px dashed var(--accent);
+  background: linear-gradient(135deg, rgba(129,140,248,.06), rgba(129,140,248,.02));
+}
+.log-card-generating .log-card-body {
+  max-height: none; color: var(--accent);
+}
+.typing-dots { display: inline-flex; gap: 3px; }
+.typing-dots span {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+  animation: typing 1.2s ease infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: .2s; }
+.typing-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes typing {
+  0%, 60%, 100% { opacity: .3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* ── Right Panel ── */
+.right-panel {
+  width: 340px; flex-shrink: 0; background: #12121f;
+  border-left: 1px solid var(--border); display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.panel-tabs {
+  display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.panel-tab {
+  flex: 1; padding: 10px 8px; text-align: center; font-size: 12px;
+  font-weight: 600; cursor: pointer; border: none; background: none;
+  color: var(--text-dim); transition: all .15s; border-bottom: 2px solid transparent;
+  font-family: inherit;
+}
+.panel-tab:hover { color: var(--text); background: rgba(255,255,255,.03); }
+.panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.panel-content {
+  flex: 1; overflow-y: auto; padding: 14px;
+}
+.panel-pane { display: none; }
+.panel-pane.active { display: block; }
+
+/* ── Form Controls ── */
+textarea, input[type="text"], input[type="number"], select {
+  width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 13px; font-family: inherit;
+  color: var(--text); background: var(--bg-input); transition: border-color .15s;
+}
+textarea:focus, input:focus, select:focus {
+  outline: none; border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(129,140,248,.1);
+}
+textarea { resize: vertical; min-height: 70px; }
+select { cursor: pointer; }
+label.field-label {
+  display: block; font-size: 12px; color: var(--text-dim);
+  margin-bottom: 4px; font-weight: 500;
+}
+.field-group { margin-bottom: 12px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px;
+  font-weight: 600; cursor: pointer; border: none; font-family: inherit;
+  transition: all .15s;
+}
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-accent { background: var(--accent); color: #fff; }
+.btn-accent:hover:not(:disabled) { background: #6366f1; }
+.btn-ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+.btn-ghost:hover:not(:disabled) { background: var(--accent-bg); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-lg { padding: 12px 24px; font-size: 14px; width: 100%; }
+.btn-green { background: var(--green-dim); color: #fff; }
+.btn-green:hover:not(:disabled) { background: #16a34a; }
+
+/* ── Chat ── */
+.chat-messages {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 12px; max-height: 400px; overflow-y: auto;
+}
+.chat-msg {
+  padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  max-width: 90%;
+}
+.chat-msg-human { background: var(--accent-bg); color: var(--accent); align-self: flex-end; }
+.chat-msg-judge { background: rgba(134,239,172,.08); color: var(--green); align-self: flex-start; }
+.chat-msg-meta {
+  display: flex; align-items: center; gap: 6px; margin-top: 4px;
+  font-size: 11px; color: var(--text-muted);
+}
+.chat-msg-meta label { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.chat-msg-meta input[type="checkbox"] { accent-color: var(--accent); width: 12px; height: 12px; }
+
+/* ── Context List ── */
+.ctx-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 6px; font-size: 12px;
+  transition: background .1s; cursor: pointer;
+}
+.ctx-row:hover { background: rgba(255,255,255,.04); }
+.ctx-row input[type="checkbox"] { accent-color: var(--accent); flex-shrink: 0; }
+.ctx-row.excluded { opacity: .4; text-decoration: line-through; }
+.ctx-seq { font-weight: 700; color: var(--text-muted); width: 24px; text-align: right; }
+.ctx-name { font-weight: 600; width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-preview { flex: 1; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-actions { display: flex; gap: 6px; margin-bottom: 10px; }
+
+/* ── Start Screen ── */
+.start-screen {
+  display: flex; align-items: center; justify-content: center;
+  flex: 1; padding: 40px;
+}
+.start-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 32px 36px; width: 420px; max-width: 100%;
+}
+.start-card h2 { font-size: 20px; margin-bottom: 4px; }
+.start-card h2 span { color: var(--accent); }
+.start-card p { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+.start-toggle {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
+  font-size: 13px;
+}
+.start-toggle input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+
+/* ── Spinner ── */
+.spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.hidden { display: none !important; }
+.muted { color: var(--text-muted); font-size: 12px; font-style: italic; }
+.mt-8 { margin-top: 8px; }
+.mb-8 { margin-bottom: 8px; }
+
+/* ── Notification badge on tabs ── */
+.tab-badge {
+  display: inline-block; min-width: 16px; height: 16px; line-height: 16px;
+  text-align: center; border-radius: 8px; font-size: 10px; font-weight: 700;
+  background: var(--red); color: #fff; margin-left: 4px; padding: 0 4px;
+}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <!-- ═══ Start Screen ═══ -->
+  <div class="start-screen" id="startScreen">
+    <div class="start-card">
+      <h2>🎙️ <span>辩论</span>实时查看器</h2>
+      <p>启动辩论并实时查看辩手交锋过程</p>
+      <div class="field-group">
+        <label class="field-label">议题文件路径</label>
+        <input type="text" id="startTopicPath" placeholder="/path/to/my_topic.md">
+      </div>
+      <div class="field-group">
+        <label class="field-label">辩论轮数（可选覆盖）</label>
+        <input type="number" id="startRounds" min="1" max="20" value="" placeholder="使用文件配置">
+      </div>
+      <button class="btn btn-accent btn-lg" id="startBtn">🚀 开始辩论</button>
+      <div id="startError" class="muted mt-8" style="color:var(--red);display:none"></div>
+      <div id="startSpinner" class="mt-8 hidden" style="text-align:center">
+        <span class="spinner"></span> 正在启动...
+      </div>
+      <div id="existingSessions" class="mt-8 hidden"></div>
+    </div>
+  </div>
+
+  <!-- ═══ Live View ═══ -->
+  <div id="liveView" class="hidden" style="display:none;flex-direction:column;height:100vh;">
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-title">🎙️ <span id="debateTitle">辩论</span></div>
+      <div id="statusBadge" class="badge badge-idle">就绪</div>
+      <div class="round-counter" id="roundCounter">R0/0</div>
+      <div class="topbar-spacer"></div>
+      <button class="btn btn-ghost btn-sm" id="backBtn">← 返回</button>
+    </div>
+
+    <!-- Main -->
+    <div class="main">
+      <!-- Left Sidebar -->
+      <div class="sidebar" id="sidebar">
+        <div class="sidebar-section">参与者</div>
+        <div class="sidebar-item active" data-filter="all">
+          <span class="sidebar-dot dot-idle"></span>
+          <span class="sidebar-name">全部</span>
+        </div>
+        <div id="sidebarDebaters"></div>
+        <div class="sidebar-section" style="margin-top:12px">裁判</div>
+        <div id="sidebarJudge"></div>
+      </div>
+
+      <!-- Center: Log -->
+      <div class="center">
+        <div class="log-container" id="logContainer"></div>
+      </div>
+
+      <!-- Right: Control Panel -->
+      <div class="right-panel">
+        <div class="panel-tabs">
+          <button class="panel-tab active" data-pane="input">📊 状态</button>
+          <button class="panel-tab" data-pane="judge">⚖️ 裁判</button>
+          <button class="panel-tab" data-pane="context">📋 上下文</button>
+        </div>
+        <div class="panel-content">
+          <!-- Info Pane -->
+          <div class="panel-pane active" id="pane-input">
+            <div class="muted" style="text-align:center;padding:30px 0">
+              <div style="font-size:28px;margin-bottom:8px">⏳</div>
+              <div id="debateStatusText">辩论进行中...</div>
+            </div>
+          </div>
+
+          <!-- Judge Pane -->
+          <div class="panel-pane" id="pane-judge">
+            <div class="chat-messages" id="judgeChatMessages"></div>
+            <div class="field-group">
+              <textarea id="judgeChatInput" rows="3" placeholder="与裁判交流..."></textarea>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <div style="flex:1">
+                <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px;cursor:pointer">
+                  <input type="checkbox" id="judgeChatInContext" style="accent-color:var(--accent);width:13px;height:13px">
+                  加入裁判上下文
+                </label>
+              </div>
+              <button class="btn btn-accent btn-sm" id="judgeChatSendBtn">发送</button>
+            </div>
+          </div>
+
+          <!-- Context Pane -->
+          <div class="panel-pane" id="pane-context">
+            <div class="ctx-actions">
+              <button class="btn btn-ghost btn-sm" id="ctxSelectAll">全选</button>
+              <button class="btn btn-ghost btn-sm" id="ctxDeselectAll">全不选</button>
+              <button class="btn btn-ghost btn-sm" id="ctxRefresh">刷新</button>
+            </div>
+            <div id="contextList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   State
+   ═══════════════════════════════════════════════════ */
+const S = {
+  sessionId: null,
+  state: 'idle',
+  title: '',
+  currentRound: 0,
+  totalRounds: 0,
+  debaters: [],
+  judge: '',
+  filter: 'all',
+  entries: [],
+  generating: new Set(),
+  es: null,
+  judgeChatIdx: 0,
+};
+
+const $ = id => document.getElementById(id);
+const qs = sel => document.querySelector(sel);
+
+/* ═══════════════════════════════════════════════════
+   API helpers
+   ═══════════════════════════════════════════════════ */
+async function api(path, body) {
+  const opts = body !== undefined
+    ? { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }
+    : {};
+  const r = await fetch(path, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+/* ═══════════════════════════════════════════════════
+   Init
+   ═══════════════════════════════════════════════════ */
+async function init() {
+  // Check existing sessions
+  try {
+    const data = await api('/debate/sessions');
+    const active = (data.sessions || []).filter(s => !['done','error'].includes(s.state));
+    if (active.length) {
+      const el = $('existingSessions');
+      el.classList.remove('hidden');
+      el.innerHTML = '<div style="margin-bottom:6px;font-size:12px;color:var(--text-dim)">已有进行中的辩论：</div>' +
+        active.map(s => `<button class="btn btn-ghost btn-sm mb-8" onclick="joinSession('${s.id}')" style="width:100%;justify-content:flex-start">
+          📡 ${s.title || s.id} (R${s.current_round}/${s.total_rounds}) — ${s.state}
+        </button>`).join('');
+    }
+  } catch(e) {}
+
+  // Bind events
+  $('startBtn').addEventListener('click', handleStart);
+  $('backBtn').addEventListener('click', () => { disconnectSSE(); showStart(); });
+  $('judgeChatSendBtn').addEventListener('click', handleJudgeChatSend);
+  $('ctxSelectAll').addEventListener('click', () => setAllContext(true));
+  $('ctxDeselectAll').addEventListener('click', () => setAllContext(false));
+  $('ctxRefresh').addEventListener('click', refreshContext);
+
+  // Tab switching
+  document.querySelectorAll('.panel-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel-pane').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      $('pane-' + tab.dataset.pane).classList.add('active');
+    });
+  });
+
+  // Sidebar filter
+  document.querySelectorAll('#sidebar .sidebar-item[data-filter]').forEach(item => {
+    item.addEventListener('click', () => {
+      S.filter = item.dataset.filter;
+      document.querySelectorAll('#sidebar .sidebar-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      renderLog();
+    });
+  });
+
+  // Enter key in start path
+  $('startTopicPath').addEventListener('keydown', e => { if (e.key === 'Enter') handleStart(); });
+}
+
+/* ═══════════════════════════════════════════════════
+   Start / Join
+   ═══════════════════════════════════════════════════ */
+async function handleStart() {
+  const path = $('startTopicPath').value.trim();
+  if (!path) { showStartError('请输入议题文件路径'); return; }
+
+  $('startBtn').disabled = true;
+  $('startSpinner').classList.remove('hidden');
+  $('startError').style.display = 'none';
+
+  try {
+    const body = { topic_path: path };
+    const roundsVal = $('startRounds').value.trim();
+    if (roundsVal) body.rounds = parseInt(roundsVal);
+
+    const data = await api('/debate/start', body);
+    if (data.success && data.session) {
+      joinSession(data.session.id);
+    } else {
+      showStartError(data.error || '启动失败');
+    }
+  } catch(e) {
+    showStartError(e.message);
+  } finally {
+    $('startBtn').disabled = false;
+    $('startSpinner').classList.add('hidden');
+  }
+}
+
+function showStartError(msg) {
+  $('startError').textContent = msg;
+  $('startError').style.display = 'block';
+}
+
+async function joinSession(id) {
+  S.sessionId = id;
+  // Get initial status
+  try {
+    const data = await api(`/debate/${id}/status`);
+    const s = data.session;
+    S.title = s.title; S.state = s.state;
+    S.currentRound = s.current_round; S.totalRounds = s.total_rounds;
+    S.debaters = s.debaters; S.judge = s.judge;
+  } catch(e) {}
+
+  // Get existing log
+  try {
+    const data = await api(`/debate/${id}/log`);
+    S.entries = data.entries || [];
+  } catch(e) {}
+
+  showLive();
+  connectSSE(id);
+}
+
+/* ═══════════════════════════════════════════════════
+   View toggling
+   ═══════════════════════════════════════════════════ */
+function showStart() {
+  $('startScreen').style.display = 'flex';
+  $('liveView').style.display = 'none';
+  $('liveView').classList.add('hidden');
+}
+function showLive() {
+  $('startScreen').style.display = 'none';
+  $('liveView').style.display = 'flex';
+  $('liveView').classList.remove('hidden');
+  renderSidebar();
+  renderLog();
+  updateStatus();
+}
+
+/* ═══════════════════════════════════════════════════
+   SSE
+   ═══════════════════════════════════════════════════ */
+function connectSSE(id) {
+  disconnectSSE();
+  const lastSeq = S.entries.length ? Math.max(...S.entries.map(e=>e.seq)) : 0;
+  S.es = new EventSource(`/debate/${id}/stream?since=${lastSeq}`);
+
+  const eventTypes = [
+    'session_start','session_end','session_error',
+    'round_start','round_end',
+    'debater_start','debater_done',
+    'log_entry',
+    'cross_exam_start','cross_exam_done',
+    'convergence_check','early_stop',
+    'judge_start','judge_done','judge_chat_reply',
+  ];
+  eventTypes.forEach(type => {
+    S.es.addEventListener(type, (e) => {
+      const payload = JSON.parse(e.data);
+      handleEvent(payload.type, payload.data, payload.seq);
+    });
+  });
+  S.es.onerror = () => {
+    console.log('SSE error — will auto-reconnect');
+  };
+}
+function disconnectSSE() {
+  if (S.es) { S.es.close(); S.es = null; }
+}
+
+function handleEvent(type, data, seq) {
+  switch(type) {
+    case 'session_start':
+      S.title = data.title || S.title;
+      S.totalRounds = data.rounds;
+      S.debaters = data.debaters || S.debaters;
+      S.judge = data.judge || S.judge;
+      S.state = 'running';
+      renderSidebar();
+      break;
+    case 'round_start':
+      S.currentRound = data.round;
+      S.totalRounds = data.total;
+      S.state = 'running';
+      break;
+    case 'round_end':
+      break;
+    case 'debater_start':
+      S.generating.add(data.name);
+      renderGenerating();
+      updateSidebarStatus(data.name, 'active');
+      break;
+    case 'debater_done':
+      S.generating.delete(data.name);
+      renderGenerating();
+      updateSidebarStatus(data.name, 'done');
+      break;
+    case 'log_entry':
+      // Avoid duplicates
+      if (!S.entries.find(e => e.seq === data.seq)) {
+        S.entries.push(data);
+        appendLogCard(data);
+      }
+      break;
+    case 'judge_start':
+      S.state = 'judging';
+      S.generating.add(data.judge || S.judge);
+      renderGenerating();
+      break;
+    case 'judge_done':
+      S.generating.delete(data.judge || S.judge);
+      renderGenerating();
+      break;
+    case 'judge_chat_reply':
+      // Refresh judge chat
+      refreshJudgeChat();
+      break;
+    case 'cross_exam_start':
+      break;
+    case 'cross_exam_done':
+      break;
+    case 'convergence_check':
+      break;
+    case 'early_stop':
+      break;
+    case 'session_end':
+      S.state = 'done';
+      break;
+    case 'session_error':
+      S.state = 'error';
+      break;
+  }
+  updateStatus();
+}
+
+/* ═══════════════════════════════════════════════════
+   Render: Status
+   ═══════════════════════════════════════════════════ */
+function updateStatus() {
+  $('debateTitle').textContent = S.title || '辩论';
+  $('roundCounter').textContent = `R${S.currentRound}/${S.totalRounds}`;
+
+  const b = $('statusBadge');
+  b.className = 'badge badge-' + S.state;
+  const labels = {
+    idle:'就绪', running:'进行中',
+    judging:'裁判中', done:'已完成', error:'错误'
+  };
+  b.textContent = labels[S.state] || S.state;
+
+  const statusText = $('debateStatusText');
+  if (statusText) {
+    if (S.state === 'done') statusText.textContent = '✅ 辩论已完成';
+    else if (S.state === 'error') statusText.textContent = '❌ 辩论出错';
+    else if (S.state === 'judging') statusText.textContent = '⚖️ 裁判总结中...';
+    else statusText.textContent = '辩论进行中...';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Render: Sidebar
+   ═══════════════════════════════════════════════════ */
+function renderSidebar() {
+  const dc = $('sidebarDebaters');
+  dc.innerHTML = S.debaters.map(name =>
+    `<div class="sidebar-item" data-filter="${esc(name)}" onclick="setFilter('${esc(name)}')">
+      <span class="sidebar-dot dot-idle" id="sdot-${esc(name)}"></span>
+      <span class="sidebar-name">${esc(name)}</span>
+      <span class="sidebar-status" id="sstat-${esc(name)}"></span>
+    </div>`
+  ).join('');
+
+  const jc = $('sidebarJudge');
+  jc.innerHTML = `<div class="sidebar-item" data-filter="${esc(S.judge)}" onclick="setFilter('${esc(S.judge)}')">
+    <span class="sidebar-dot dot-idle" id="sdot-${esc(S.judge)}"></span>
+    <span class="sidebar-name">⚖️ ${esc(S.judge)}</span>
+    <span class="sidebar-status" id="sstat-${esc(S.judge)}"></span>
+  </div>`;
+}
+
+function setFilter(name) {
+  S.filter = name;
+  document.querySelectorAll('#sidebar .sidebar-item').forEach(i => {
+    i.classList.toggle('active', i.dataset.filter === name);
+  });
+  renderLog();
+}
+
+function updateSidebarStatus(name, status) {
+  const dot = document.getElementById('sdot-' + name);
+  const stat = document.getElementById('sstat-' + name);
+  if (dot) {
+    dot.className = 'sidebar-dot ' + ({active:'dot-active',done:'dot-done',waiting:'dot-waiting'}[status]||'dot-idle');
+  }
+  if (stat) {
+    stat.textContent = {active:'⏳',done:'✓',waiting:'—'}[status] || '';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   Render: Log
+   ═══════════════════════════════════════════════════ */
+function renderLog() {
+  const c = $('logContainer');
+  c.innerHTML = '';
+  let lastRound = 0;
+
+  const filtered = S.filter === 'all' ? S.entries
+    : S.entries.filter(e => e.name === S.filter || e.name.includes(S.filter));
+
+  filtered.forEach(entry => {
+    // Round separator (heuristic: entries are ordered by round via seq)
+    const entryRound = guessRound(entry);
+    if (entryRound > lastRound) {
+      lastRound = entryRound;
+      const sep = document.createElement('div');
+      sep.className = 'round-separator';
+      sep.textContent = `第 ${entryRound} 轮`;
+      c.appendChild(sep);
+    }
+
+    c.appendChild(createLogCard(entry));
+  });
+
+  // Generating cards
+  renderGenerating();
+  scrollToBottom();
+}
+
+function guessRound(entry) {
+  // Heuristic: based on sequence position relative to debater count
+  const n = Math.max(S.debaters.length, 1);
+  return Math.ceil(entry.seq / n);
+}
+
+function createLogCard(entry) {
+  const card = document.createElement('div');
+  card.className = 'log-card';
+  card.dataset.seq = entry.seq;
+  card.dataset.name = entry.name;
+
+  const icon = entry.tag === 'summary' ? '⚖️' : entry.tag === 'cross_exam' ? '🔍' : entry.tag === 'human' ? '👤' : '💬';
+  const preview = entry.content.length > 200 ? entry.content.slice(0, 200) + '...' : entry.content;
+  const ts = entry.ts ? new Date(entry.ts).toLocaleTimeString('zh-CN') : '';
+
+  card.innerHTML = `
+    <div class="log-card-header">
+      <span class="log-card-icon">${icon}</span>
+      <span class="log-card-name">${esc(entry.name)}</span>
+      <span class="log-card-time">${ts}</span>
+      <span class="log-card-expand">▼</span>
+    </div>
+    <div class="log-card-body-fade">
+      <div class="log-card-body">${esc(entry.content)}</div>
+    </div>`;
+
+  card.querySelector('.log-card-header').addEventListener('click', () => {
+    card.classList.toggle('expanded');
+  });
+
+  return card;
+}
+
+function appendLogCard(entry) {
+  if (S.filter !== 'all' && !entry.name.includes(S.filter)) return;
+
+  const c = $('logContainer');
+  // Remove generating cards for this name
+  const gen = c.querySelector(`.log-card-generating[data-name="${entry.name}"]`);
+  if (gen) gen.remove();
+
+  c.appendChild(createLogCard(entry));
+  scrollToBottom();
+}
+
+function renderGenerating() {
+  const c = $('logContainer');
+  // Remove old generating cards
+  c.querySelectorAll('.log-card-generating').forEach(el => el.remove());
+
+  S.generating.forEach(name => {
+    if (S.filter !== 'all' && !name.includes(S.filter)) return;
+    const card = document.createElement('div');
+    card.className = 'log-card log-card-generating';
+    card.dataset.name = name;
+    card.innerHTML = `
+      <div class="log-card-header">
+        <span class="log-card-icon">✨</span>
+        <span class="log-card-name">${esc(name)}</span>
+        <span class="log-card-time">正在生成</span>
+      </div>
+      <div class="log-card-body">
+        <div class="typing-dots"><span></span><span></span><span></span></div>
+      </div>`;
+    c.appendChild(card);
+  });
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  const c = $('logContainer');
+  requestAnimationFrame(() => { c.scrollTop = c.scrollHeight; });
+}
+
+/* ═══════════════════════════════════════════════════
+   Judge Chat
+   ═══════════════════════════════════════════════════ */
+async function handleJudgeChatSend() {
+  if (!S.sessionId) return;
+  const msg = $('judgeChatInput').value.trim();
+  if (!msg) return;
+  $('judgeChatSendBtn').disabled = true;
+
+  // Optimistic render
+  appendChatMsg('human', msg);
+  $('judgeChatInput').value = '';
+
+  try {
+    const data = await api(`/debate/${S.sessionId}/judge-chat`, {
+      message: msg,
+      include_in_context: $('judgeChatInContext').checked,
+    });
+    if (data.reply) {
+      appendChatMsg('judge', data.reply);
+    }
+  } catch(e) {
+    appendChatMsg('judge', '⚠️ 发送失败: ' + e.message);
+  } finally {
+    $('judgeChatSendBtn').disabled = false;
+  }
+}
+
+function appendChatMsg(role, content) {
+  const c = $('judgeChatMessages');
+  const div = document.createElement('div');
+  div.className = `chat-msg chat-msg-${role}`;
+  div.textContent = content;
+  c.appendChild(div);
+  c.scrollTop = c.scrollHeight;
+}
+
+async function refreshJudgeChat() {
+  if (!S.sessionId) return;
+  try {
+    const data = await api(`/debate/${S.sessionId}/judge-chats`);
+    const c = $('judgeChatMessages');
+    c.innerHTML = '';
+    (data.chats || []).forEach((chat, idx) => {
+      const div = document.createElement('div');
+      div.className = `chat-msg chat-msg-${chat.role}`;
+      div.innerHTML = `${esc(chat.content)}
+        <div class="chat-msg-meta">
+          <label><input type="checkbox" ${chat.in_context?'checked':''} onchange="toggleChatContext(${idx}, this.checked)"> 加入上下文</label>
+          <span>${chat.ts ? new Date(chat.ts).toLocaleTimeString('zh-CN') : ''}</span>
+        </div>`;
+      c.appendChild(div);
+    });
+    c.scrollTop = c.scrollHeight;
+  } catch(e) {}
+}
+
+async function toggleChatContext(idx, val) {
+  if (!S.sessionId) return;
+  try {
+    await api(`/debate/${S.sessionId}/judge-chat/context`, { index: idx, in_context: val });
+  } catch(e) {}
+}
+
+/* ═══════════════════════════════════════════════════
+   Context Management
+   ═══════════════════════════════════════════════════ */
+async function refreshContext() {
+  if (!S.sessionId) return;
+  try {
+    const data = await api(`/debate/${S.sessionId}/context`);
+    const c = $('contextList');
+    c.innerHTML = '';
+    (data.entries || []).forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'ctx-row' + (entry.excluded ? ' excluded' : '');
+      row.innerHTML = `
+        <input type="checkbox" ${entry.excluded ? '' : 'checked'} onchange="toggleContext(${entry.seq})">
+        <span class="ctx-seq">#${entry.seq}</span>
+        <span class="ctx-name">${esc(entry.name)}</span>
+        <span class="ctx-preview">${esc(entry.preview)}</span>`;
+      c.appendChild(row);
+    });
+  } catch(e) {}
+}
+
+async function toggleContext(seq) {
+  if (!S.sessionId) return;
+  try {
+    await api(`/debate/${S.sessionId}/context`, { toggle: seq });
+    refreshContext();
+  } catch(e) {}
+}
+
+async function setAllContext(included) {
+  if (!S.sessionId) return;
+  try {
+    if (included) {
+      await api(`/debate/${S.sessionId}/context`, { excluded_seqs: [] });
+    } else {
+      const seqs = S.entries.map(e => e.seq);
+      await api(`/debate/${S.sessionId}/context`, { excluded_seqs: seqs });
+    }
+    refreshContext();
+  } catch(e) {}
+}
+
+/* ═══════════════════════════════════════════════════
+   Utils
+   ═══════════════════════════════════════════════════ */
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* Boot */
+document.addEventListener('DOMContentLoaded', init);
+// Auto-refresh context when switching to context tab
+document.querySelector('[data-pane="context"]')?.addEventListener('click', refreshContext);
+document.querySelector('[data-pane="judge"]')?.addEventListener('click', refreshJudgeChat);
+</script>
+</body>
+</html>
