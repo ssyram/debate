@@ -6,17 +6,20 @@
 #  使用方法:
 #    1. 复制此文件:  cp template.md my_topic.md
 #    2. 编辑内容
-#    3. 运行辩论:    python debate.py my_topic.md
-#    4. 预览配置:    python debate.py my_topic.md --dry-run
+#    3. 运行辩论:    debate-tool run my_topic.md
+#    4. 预览配置:    debate-tool run my_topic.md --dry-run
+#    5. 质询模式:    debate-tool run my_topic.md --cross-exam
+#    6. 全轮质询:    debate-tool run my_topic.md --cross-exam -1
+#    7. 收敛早停:    debate-tool run my_topic.md --early-stop
 #
-#  或使用交互式向导:  python new_debate.py
+#  或使用交互式向导:  debate-tool build
 #  向导支持 AI 立场推荐 (可选), 自动生成辩手配置。
 # ═══════════════════════════════════════════════════════════════
 
 # 辩论标题 (默认: 文件名)
 title: "在此输入辩论标题"
 
-# 辩论轮数 (默认: 3)
+# 辩论轮数 (默认: 3, --rounds 总是覆盖)
 rounds: 3
 
 # 单次 API 超时秒数 (默认: 300)
@@ -24,6 +27,18 @@ rounds: 3
 
 # 辩手单次输出 token 上限 (默认: 6000)
 # max_tokens: 6000
+
+# 质询轮数 (默认: 0, 即不质询)
+#   1   — R1 后质询 (辩手 round-robin 互相质疑)
+#   3   — R1~R3 后均质询
+#   -1  — 每轮都质询 (最后一轮除外)
+# 也可用 CLI flag: debate-tool run topic.md --cross-exam [N]
+# cross_exam: 1
+
+# 早停 (默认: false)
+# 每轮后检查观点收敛度, 达到阈值则跳过剩余轮次
+# 可通过 CLI flag 开启: debate-tool run topic.md --early-stop
+# early_stop: true
 
 # ─── API 配置 (可选) ───────────────────────────────────
 # 不填则使用环境变量 DEBATE_BASE_URL / DEBATE_API_KEY,
