@@ -172,6 +172,7 @@ After the debate completes, read and present the summary file to the user. Highl
 - API credentials: per-debater > topic-level > env vars (`DEBATE_BASE_URL`, `DEBATE_API_KEY`).
 - At least 2 debaters are required.
 - If the user specifies models, styles, or rounds explicitly, respect their choices. Otherwise, use sensible defaults based on the topic.
+- **Debater models** are controlled by the env var `DEFAULT_DEBATE_MODELS` (comma-separated list, e.g. `"gpt-5.2,kimi-k2.5,MiniMax-M2.5"`). The i-th debater gets `models[i % len(models)]`. Defaults to `gpt-5.2` if unset. When writing topic files, cycle through this list for debater `model` fields.
 - Language: Use the language used in the current chat with user. The example YAML is in English, but adapt as needed.
 - **Always use `python3`** (not `python`) to avoid hitting Python 2.7 on some systems.
-- The stance generator can be invoked via: `cd $DEBATE_TOOL_DIR && python3 -m debate_tool stance <topic_file> --num 5`
+- The stance generator assigns debater models from `DEFAULT_DEBATE_MODELS` (cyclic). Invoke via: `cd $DEBATE_TOOL_DIR && python3 -m debate_tool stance <topic_file> --num 5`

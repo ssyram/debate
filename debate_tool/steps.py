@@ -1,4 +1,5 @@
 """Wizard step functions — one per wizard screen."""
+
 from __future__ import annotations
 
 import curses
@@ -7,22 +8,72 @@ from pathlib import Path
 from typing import Any
 
 from debate_tool.core import (
-    DEFAULT_DEBATERS, DEFAULT_JUDGE, DEFAULT_ROUNDS, DEFAULT_TIMEOUT,
-    DEFAULT_MAX_TOKENS, DEFAULT_BASE_URL, DEFAULT_API_KEY,
-    DEFAULT_ROUND1_TASK, DEFAULT_MIDDLE_TASK, DEFAULT_FINAL_TASK,
-    DEFAULT_JUDGE_INSTRUCTIONS, DEFAULT_CONSTRAINTS,
-    title_to_filename, mask_key, generate_topic_file, write_topic_file,
-    get_run_command, get_dryrun_command,
+    DEFAULT_DEBATERS,
+    DEFAULT_JUDGE,
+    DEFAULT_ROUNDS,
+    DEFAULT_TIMEOUT,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_BASE_URL,
+    DEFAULT_API_KEY,
+    DEFAULT_ROUND1_TASK,
+    DEFAULT_MIDDLE_TASK,
+    DEFAULT_FINAL_TASK,
+    DEFAULT_JUDGE_INSTRUCTIONS,
+    DEFAULT_CONSTRAINTS,
+    DEFAULT_DEBATE_MODELS,
+    title_to_filename,
+    mask_key,
+    generate_topic_file,
+    write_topic_file,
+    get_run_command,
+    get_dryrun_command,
 )
 from debate_tool.ui import (
-    StepResult, TopicPreview, Layout,
-    CP_INPUT_HL, CP_HEADER, CP_FILLED, CP_HELP, CP_ERROR, CP_NORMAL, CP_ACTIVE_BG,
-    draw_frame, safe_addstr, safe_addstr_wrap, is_esc,
-    curses_text_input, curses_radio_inline, curses_number_input,
-    curses_multiline_input, curses_path_input,
+    StepResult,
+    TopicPreview,
+    Layout,
+    CP_INPUT_HL,
+    CP_HEADER,
+    CP_FILLED,
+    CP_HELP,
+    CP_ERROR,
+    CP_NORMAL,
+    CP_ACTIVE_BG,
+    draw_frame,
+    safe_addstr,
+    safe_addstr_wrap,
+    is_esc,
+    curses_text_input,
+    curses_radio_inline,
+    curses_number_input,
+    curses_multiline_input,
+    curses_path_input,
 )
 from debate_tool.stance import (
-    generate_stances_sync, check_stances, StanceResult,
+    generate_stances_sync,
+    check_stances,
+    StanceResult,
+)
+from debate_tool.core import (
+    DEFAULT_DEBATERS,
+    DEFAULT_JUDGE,
+    DEFAULT_ROUNDS,
+    DEFAULT_TIMEOUT,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_BASE_URL,
+    DEFAULT_API_KEY,
+    DEFAULT_ROUND1_TASK,
+    DEFAULT_MIDDLE_TASK,
+    DEFAULT_FINAL_TASK,
+    DEFAULT_JUDGE_INSTRUCTIONS,
+    DEFAULT_CONSTRAINTS,
+    DEFAULT_DEBATE_MODELS,
+    title_to_filename,
+    mask_key,
+    generate_topic_file,
+    write_topic_file,
+    get_run_command,
+    get_dryrun_command,
 )
 
 
@@ -52,9 +103,11 @@ STEP_TITLES = [
 # Stance workspace data model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class StanceItem:
     """A single debater item in the stance workspace."""
+
     name: str
     model: str
     style: str
@@ -63,11 +116,15 @@ class StanceItem:
     selected: bool = True
     source: str = "llm"  # "llm" or "custom"
 
+
 # ---------------------------------------------------------------------------
 # Step 0: Title
 # ---------------------------------------------------------------------------
 
-def step_title(stdscr: Any, preview: TopicPreview, lo: Layout, current: str) -> str | object:
+
+def step_title(
+    stdscr: Any, preview: TopicPreview, lo: Layout, current: str
+) -> str | object:
     """Step 1: Debate title input (required, non-empty)."""
     preview.active_field = "title"
     help_text = "Esc=退出  Enter=确认  输入辩论标题"
@@ -75,9 +132,13 @@ def step_title(stdscr: Any, preview: TopicPreview, lo: Layout, current: str) -> 
     def _redraw() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[0], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "输入本次辩论的标题 (必填)",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            lo.ri_y,
+            lo.ri_x,
+            "输入本次辩论的标题 (必填)",
+            curses.color_pair(CP_NORMAL),
+        )
 
     def _validate(val: str) -> str | None:
         if not val.strip():
@@ -86,7 +147,10 @@ def step_title(stdscr: Any, preview: TopicPreview, lo: Layout, current: str) -> 
 
     _redraw()
     result = curses_text_input(
-        stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w,
+        stdscr,
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
         default=current,
         validate=_validate,
         redraw=_redraw,
@@ -100,8 +164,13 @@ def step_title(stdscr: Any, preview: TopicPreview, lo: Layout, current: str) -> 
 # Step 1: Output path
 # ---------------------------------------------------------------------------
 
+
 def step_output_path(
-    stdscr: Any, preview: TopicPreview, lo: Layout, current: str, title: str,
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    current: str,
+    title: str,
 ) -> str | object:
     """Step 2: Output file path with Tab completion."""
     preview.active_field = "output_path"
@@ -111,19 +180,27 @@ def step_output_path(
     def _redraw() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[1], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "输出文件路径",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr, lo.ri_y, lo.ri_x, "输出文件路径", curses.color_pair(CP_NORMAL)
+        )
         # Show file-exists warning if applicable
         cur_path = Path(default_path)
         if cur_path.exists():
-            safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x,
-                        "文件已存在，将覆盖",
-                        curses.color_pair(CP_HEADER))
+            safe_addstr(
+                stdscr,
+                lo.ri_y + 1,
+                lo.ri_x,
+                "文件已存在，将覆盖",
+                curses.color_pair(CP_HEADER),
+            )
 
     _redraw()
     result = curses_path_input(
-        stdscr, lo.ri_y + 3, lo.ri_x, lo.ri_w, lo.ri_h - 3,
+        stdscr,
+        lo.ri_y + 3,
+        lo.ri_x,
+        lo.ri_w,
+        lo.ri_h - 3,
         default=default_path,
         redraw=_redraw,
     )
@@ -132,9 +209,13 @@ def step_output_path(
     path_str = result.strip()
     # Show warning if file exists after user entered the path
     if Path(path_str).exists():
-        safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x,
-                    "文件已存在，将覆盖" + " " * 20,
-                    curses.color_pair(CP_HEADER))
+        safe_addstr(
+            stdscr,
+            lo.ri_y + 1,
+            lo.ri_x,
+            "文件已存在，将覆盖" + " " * 20,
+            curses.color_pair(CP_HEADER),
+        )
         stdscr.refresh()
     return path_str
 
@@ -143,8 +224,12 @@ def step_output_path(
 # Step 2: Rounds
 # ---------------------------------------------------------------------------
 
+
 def step_rounds(
-    stdscr: Any, preview: TopicPreview, lo: Layout, current: int,
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    current: int,
 ) -> int | object:
     """Step 3: Number of debate rounds."""
     preview.active_field = "rounds"
@@ -153,15 +238,19 @@ def step_rounds(
     def _redraw() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[2], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "辩论轮数 (1-20)",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr, lo.ri_y, lo.ri_x, "辩论轮数 (1-20)", curses.color_pair(CP_NORMAL)
+        )
 
     _redraw()
     result = curses_number_input(
-        stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w,
+        stdscr,
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
         default=current,
-        min_val=1, max_val=20,
+        min_val=1,
+        max_val=20,
         redraw=_redraw,
     )
     if result is StepResult.BACK:
@@ -173,8 +262,12 @@ def step_rounds(
 # Step 3: Base URL
 # ---------------------------------------------------------------------------
 
+
 def step_base_url(
-    stdscr: Any, preview: TopicPreview, lo: Layout, current: str,
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    current: str,
 ) -> str | object:
     """Step 4: API base URL (optional)."""
     preview.active_field = "base_url"
@@ -183,13 +276,20 @@ def step_base_url(
     def _redraw() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[3], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "API Base URL (可选，留空使用环境变量)",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            lo.ri_y,
+            lo.ri_x,
+            "API Base URL (可选，留空使用环境变量)",
+            curses.color_pair(CP_NORMAL),
+        )
 
     _redraw()
     result = curses_text_input(
-        stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w,
+        stdscr,
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
         default=current,
         redraw=_redraw,
     )
@@ -202,8 +302,12 @@ def step_base_url(
 # Step 4: API Key
 # ---------------------------------------------------------------------------
 
+
 def step_api_key(
-    stdscr: Any, preview: TopicPreview, lo: Layout, current: str,
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    current: str,
 ) -> str | object:
     """Step 5: API key (optional)."""
     preview.active_field = "api_key"
@@ -212,13 +316,20 @@ def step_api_key(
     def _redraw() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[4], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "API Key (可选，留空使用 DEBATE_API_KEY 环境变量)",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            lo.ri_y,
+            lo.ri_x,
+            "API Key (可选，留空使用 DEBATE_API_KEY 环境变量)",
+            curses.color_pair(CP_NORMAL),
+        )
 
     _redraw()
     result = curses_text_input(
-        stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w,
+        stdscr,
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
         default=current,
         redraw=_redraw,
     )
@@ -231,8 +342,12 @@ def step_api_key(
 # Step 5: Topic body — inline or file
 # ---------------------------------------------------------------------------
 
+
 def step_topic_body(
-    stdscr: Any, preview: TopicPreview, lo: Layout, preloaded_text: str = "",
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    preloaded_text: str = "",
 ) -> str | object:
     """Step 6: Topic body — choose inline editor or file path."""
     preview.active_field = "topic_body"
@@ -245,14 +360,18 @@ def step_topic_body(
     def _redraw_radio() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[5], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "选择议题输入方式:",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr, lo.ri_y, lo.ri_x, "选择议题输入方式:", curses.color_pair(CP_NORMAL)
+        )
 
     _redraw_radio()
     choice = curses_radio_inline(
-        stdscr, ["直接输入", "从文件读取"],
-        lo.ri_y + 2, lo.ri_x, lo.ri_w, lo.ri_h - 2,
+        stdscr,
+        ["直接输入", "从文件读取"],
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
+        lo.ri_h - 2,
         redraw=_redraw_radio,
     )
     if choice is StepResult.BACK:
@@ -265,13 +384,21 @@ def step_topic_body(
         def _redraw_editor() -> None:
             stdscr.erase()
             draw_frame(stdscr, preview, STEP_TITLES[5], help_text_edit, lo)
-            safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                        "输入辩论议题内容:",
-                        curses.color_pair(CP_NORMAL))
+            safe_addstr(
+                stdscr,
+                lo.ri_y,
+                lo.ri_x,
+                "输入辩论议题内容:",
+                curses.color_pair(CP_NORMAL),
+            )
 
         _redraw_editor()
         result = curses_multiline_input(
-            stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w, lo.ri_h - 2,
+            stdscr,
+            lo.ri_y + 2,
+            lo.ri_x,
+            lo.ri_w,
+            lo.ri_h - 2,
             default=preview.topic_body,
             redraw=_redraw_editor,
         )
@@ -285,9 +412,9 @@ def step_topic_body(
     def _redraw_file() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[5], help_text_file, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "输入议题文件路径:",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr, lo.ri_y, lo.ri_x, "输入议题文件路径:", curses.color_pair(CP_NORMAL)
+        )
 
     def _validate_file(val: str) -> str | None:
         if not val.strip():
@@ -298,7 +425,11 @@ def step_topic_body(
 
     _redraw_file()
     file_path = curses_path_input(
-        stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w, lo.ri_h - 2,
+        stdscr,
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
+        lo.ri_h - 2,
         validate=_validate_file,
         redraw=_redraw_file,
     )
@@ -321,23 +452,39 @@ def step_topic_body(
 
     stdscr.erase()
     draw_frame(stdscr, preview, STEP_TITLES[5], "Enter=确认  Esc=重选", lo)
-    safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                f"文件: {p.name} ({len(lines)} 行)",
-                curses.color_pair(CP_FILLED))
-    safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x,
-                "─" * min(lo.ri_w, 30),
-                curses.color_pair(CP_HELP))
+    safe_addstr(
+        stdscr,
+        lo.ri_y,
+        lo.ri_x,
+        f"文件: {p.name} ({len(lines)} 行)",
+        curses.color_pair(CP_FILLED),
+    )
+    safe_addstr(
+        stdscr, lo.ri_y + 1, lo.ri_x, "─" * min(lo.ri_w, 30), curses.color_pair(CP_HELP)
+    )
     for i, line in enumerate(preview_lines):
-        safe_addstr(stdscr, lo.ri_y + 2 + i, lo.ri_x,
-                    line[:lo.ri_w],
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            lo.ri_y + 2 + i,
+            lo.ri_x,
+            line[: lo.ri_w],
+            curses.color_pair(CP_NORMAL),
+        )
     if len(lines) > 3:
-        safe_addstr(stdscr, lo.ri_y + 5, lo.ri_x,
-                    f"... ({len(lines) - 3} 行省略)",
-                    curses.color_pair(CP_NORMAL) | curses.A_DIM)
-    safe_addstr(stdscr, lo.ri_y + 7, lo.ri_x,
-                "使用此内容？(Enter=是, Esc=重选)",
-                curses.color_pair(CP_HEADER))
+        safe_addstr(
+            stdscr,
+            lo.ri_y + 5,
+            lo.ri_x,
+            f"... ({len(lines) - 3} 行省略)",
+            curses.color_pair(CP_NORMAL) | curses.A_DIM,
+        )
+    safe_addstr(
+        stdscr,
+        lo.ri_y + 7,
+        lo.ri_x,
+        "使用此内容？(Enter=是, Esc=重选)",
+        curses.color_pair(CP_HEADER),
+    )
     stdscr.refresh()
 
     while True:
@@ -352,6 +499,7 @@ def step_topic_body(
 # Step 6: Stance generator — complex mini state machine
 # ---------------------------------------------------------------------------
 
+
 def _render_stance_workspace(
     stdscr: Any,
     preview: TopicPreview,
@@ -363,8 +511,13 @@ def _render_stance_workspace(
 ) -> None:
     """Render the stance workspace in the right panel."""
     stdscr.erase()
-    draw_frame(stdscr, preview, STEP_TITLES[6],
-               "[C] 继续  [R] 重新  [V] 检查  [A] 添加  [D] 删除  [E] 编辑  Enter=确认  Esc=跳过", lo)
+    draw_frame(
+        stdscr,
+        preview,
+        STEP_TITLES[6],
+        "[C] 继续  [R] 重新  [V] 检查  [A] 添加  [D] 删除  [E] 编辑  Enter=确认  Esc=跳过",
+        lo,
+    )
 
     y = lo.ri_y
     x = lo.ri_x
@@ -372,7 +525,9 @@ def _render_stance_workspace(
     max_rows = lo.ri_h - 4  # reserve bottom rows for status + message
 
     # Header
-    safe_addstr(stdscr, y, x, "AI 立场推荐", curses.color_pair(CP_HEADER) | curses.A_BOLD)
+    safe_addstr(
+        stdscr, y, x, "AI 立场推荐", curses.color_pair(CP_HEADER) | curses.A_BOLD
+    )
     y += 1
 
     # Item list
@@ -406,19 +561,20 @@ def _render_stance_workspace(
     # Separator + status at bottom
     status_y = lo.ri_y + lo.ri_h - 3
     selected_count = sum(1 for it in items if it.selected)
-    safe_addstr(stdscr, status_y, x,
-                "─" * min(w, 30),
-                curses.color_pair(CP_HELP))
-    safe_addstr(stdscr, status_y + 1, x,
-                f"已选择: {selected_count} 位辩手",
-                curses.color_pair(CP_FILLED) if selected_count >= 2
-                else curses.color_pair(CP_ERROR))
+    safe_addstr(stdscr, status_y, x, "─" * min(w, 30), curses.color_pair(CP_HELP))
+    safe_addstr(
+        stdscr,
+        status_y + 1,
+        x,
+        f"已选择: {selected_count} 位辩手",
+        curses.color_pair(CP_FILLED)
+        if selected_count >= 2
+        else curses.color_pair(CP_ERROR),
+    )
 
     # Message line
     if message:
-        safe_addstr(stdscr, status_y + 2, x,
-                    message[:w],
-                    curses.color_pair(CP_ERROR))
+        safe_addstr(stdscr, status_y + 2, x, message[:w], curses.color_pair(CP_ERROR))
 
 
 def step_stance_generator(
@@ -438,14 +594,22 @@ def step_stance_generator(
     def _redraw_ask() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[6], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "是否使用 AI 推荐辩手立场？",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            lo.ri_y,
+            lo.ri_x,
+            "是否使用 AI 推荐辩手立场？",
+            curses.color_pair(CP_NORMAL),
+        )
 
     _redraw_ask()
     choice = curses_radio_inline(
-        stdscr, ["是", "否"],
-        lo.ri_y + 2, lo.ri_x, lo.ri_w, lo.ri_h - 2,
+        stdscr,
+        ["是", "否"],
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
+        lo.ri_h - 2,
         redraw=_redraw_ask,
     )
     if choice is StepResult.BACK:
@@ -456,9 +620,9 @@ def step_stance_generator(
     # --- Phase 2: Generate stances ---
     stdscr.erase()
     draw_frame(stdscr, preview, STEP_TITLES[6], "请稍候...", lo)
-    safe_addstr(stdscr, lo.ri_y + 2, lo.ri_x,
-                "正在分析议题...",
-                curses.color_pair(CP_HELP))
+    safe_addstr(
+        stdscr, lo.ri_y + 2, lo.ri_x, "正在分析议题...", curses.color_pair(CP_HELP)
+    )
     stdscr.refresh()
 
     result = generate_stances_sync(topic_body, base_url=base_url, api_key=api_key)
@@ -466,10 +630,17 @@ def step_stance_generator(
     # Build items list from LLM result
     items: list[StanceItem] = []
     for d in result.debaters:
-        items.append(StanceItem(
-            name=d.name, model=d.model, style=d.style,
-            selected=True, source="llm", base_url="", api_key="",
-        ))
+        items.append(
+            StanceItem(
+                name=d.name,
+                model=d.model,
+                style=d.style,
+                selected=True,
+                source="llm",
+                base_url="",
+                api_key="",
+            )
+        )
 
     # --- Phase 3: Interactive workspace ---
     cursor = 0
@@ -477,7 +648,9 @@ def step_stance_generator(
     message = ""
 
     while True:
-        _render_stance_workspace(stdscr, preview, lo, items, cursor, scroll_top, message)
+        _render_stance_workspace(
+            stdscr, preview, lo, items, cursor, scroll_top, message
+        )
         stdscr.refresh()
         curses.curs_set(0)
         key = stdscr.getch()
@@ -487,9 +660,13 @@ def step_stance_generator(
             if not items:
                 return None
             # Confirm abandoning
-            safe_addstr(stdscr, lo.ri_y + lo.ri_h - 1, lo.ri_x,
-                        "放弃已选立场？(y/n)",
-                        curses.color_pair(CP_ERROR))
+            safe_addstr(
+                stdscr,
+                lo.ri_y + lo.ri_h - 1,
+                lo.ri_x,
+                "放弃已选立场？(y/n)",
+                curses.color_pair(CP_ERROR),
+            )
             stdscr.refresh()
             confirm_key = stdscr.getch()
             if confirm_key in (ord("y"), ord("Y")):
@@ -554,20 +731,33 @@ def step_stance_generator(
             # Show loading
             stdscr.erase()
             draw_frame(stdscr, preview, STEP_TITLES[6], "请稍候...", lo)
-            safe_addstr(stdscr, lo.ri_y + 2, lo.ri_x,
-                        "正在生成更多推荐...",
-                        curses.color_pair(CP_HELP))
+            safe_addstr(
+                stdscr,
+                lo.ri_y + 2,
+                lo.ri_x,
+                "正在生成更多推荐...",
+                curses.color_pair(CP_HELP),
+            )
             stdscr.refresh()
             new_result = generate_stances_sync(
-                topic_body, base_url=base_url, api_key=api_key,
+                topic_body,
+                base_url=base_url,
+                api_key=api_key,
                 user_prompt=extra_prompt if extra_prompt else "",
             )
             # Continue: pure append — keep ALL existing items, append new
             for d in new_result.debaters:
-                items.append(StanceItem(
-                    name=d.name, model=d.model, style=d.style,
-                    selected=True, source="llm", base_url="", api_key="",
-                ))
+                items.append(
+                    StanceItem(
+                        name=d.name,
+                        model=d.model,
+                        style=d.style,
+                        selected=True,
+                        source="llm",
+                        base_url="",
+                        api_key="",
+                    )
+                )
             if items:
                 cursor = min(cursor, len(items) - 1)
             continue
@@ -579,25 +769,37 @@ def step_stance_generator(
                 continue
             stdscr.erase()
             draw_frame(stdscr, preview, STEP_TITLES[6], "请稍候...", lo)
-            safe_addstr(stdscr, lo.ri_y + 2, lo.ri_x,
-                        "正在重新生成...",
-                        curses.color_pair(CP_HELP))
+            safe_addstr(
+                stdscr,
+                lo.ri_y + 2,
+                lo.ri_x,
+                "正在重新生成...",
+                curses.color_pair(CP_HELP),
+            )
             stdscr.refresh()
             new_result = generate_stances_sync(
-                topic_body, base_url=base_url, api_key=api_key,
+                topic_body,
+                base_url=base_url,
+                api_key=api_key,
                 user_prompt=extra_prompt if extra_prompt else "",
             )
             # Regenerate: keep selected, remove unselected, append new
             items = [it for it in items if it.selected]
             for d in new_result.debaters:
-                items.append(StanceItem(
-                    name=d.name, model=d.model, style=d.style,
-                    selected=True, source="llm", base_url="", api_key="",
-                ))
+                items.append(
+                    StanceItem(
+                        name=d.name,
+                        model=d.model,
+                        style=d.style,
+                        selected=True,
+                        source="llm",
+                        base_url="",
+                        api_key="",
+                    )
+                )
             cursor = 0
             scroll_top = 0
             continue
-
 
         if key in (ord("d"), ord("D")):
             # Delete item under cursor
@@ -623,7 +825,8 @@ def step_stance_generator(
             # Stance check
             selected_debaters = [
                 {"name": it.name, "model": it.model, "style": it.style}
-                for it in items if it.selected
+                for it in items
+                if it.selected
             ]
             warnings = check_stances(selected_debaters)
             _show_stance_warnings(stdscr, preview, lo, warnings)
@@ -631,19 +834,29 @@ def step_stance_generator(
 
 
 def _ask_extra_prompt(
-    stdscr: Any, preview: TopicPreview, lo: Layout,
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
 ) -> str | object:
     """Ask for optional extra prompt for stance generation."""
+
     def _redraw() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[6], "Enter=确认  Esc=取消", lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "额外指示 (可选，直接 Enter 跳过):",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            lo.ri_y,
+            lo.ri_x,
+            "额外指示 (可选，直接 Enter 跳过):",
+            curses.color_pair(CP_NORMAL),
+        )
 
     _redraw()
     result = curses_text_input(
-        stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w,
+        stdscr,
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
         default="",
         redraw=_redraw,
     )
@@ -661,7 +874,10 @@ def _add_custom_debater(
     """Add a custom debater via sequential text inputs."""
     fields = [
         ("辩手名称 (name):", ""),
-        ("模型 ID (model, 默认 gpt-5.2):", "gpt-5.2"),
+        (
+            f"模型 ID (model, 默认 {DEFAULT_DEBATE_MODELS[0]}):",
+            DEFAULT_DEBATE_MODELS[0],
+        ),
         ("立场描述 (style):", ""),
         ("API Base URL (可选):", ""),
         ("API Key (可选):", ""),
@@ -669,25 +885,35 @@ def _add_custom_debater(
     values: list[str] = []
 
     for prompt_text, default in fields:
+
         def _redraw(pt: str = prompt_text) -> None:
             stdscr.erase()
             draw_frame(stdscr, preview, STEP_TITLES[6], "Enter=确认  Esc=取消", lo)
-            safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                        "添加自定义辩手",
-                        curses.color_pair(CP_HEADER) | curses.A_BOLD)
-            safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x,
-                        pt,
-                        curses.color_pair(CP_NORMAL))
+            safe_addstr(
+                stdscr,
+                lo.ri_y,
+                lo.ri_x,
+                "添加自定义辩手",
+                curses.color_pair(CP_HEADER) | curses.A_BOLD,
+            )
+            safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x, pt, curses.color_pair(CP_NORMAL))
             # Show already-entered values
             for i, v in enumerate(values):
                 label = fields[i][0]
-                safe_addstr(stdscr, lo.ri_y + 4 + i, lo.ri_x,
-                            f"  {label} {v}",
-                            curses.color_pair(CP_FILLED))
+                safe_addstr(
+                    stdscr,
+                    lo.ri_y + 4 + i,
+                    lo.ri_x,
+                    f"  {label} {v}",
+                    curses.color_pair(CP_FILLED),
+                )
 
         _redraw()
         result = curses_text_input(
-            stdscr, lo.ri_y + 3, lo.ri_x, lo.ri_w,
+            stdscr,
+            lo.ri_y + 3,
+            lo.ri_x,
+            lo.ri_w,
             default=default,
             redraw=_redraw,
         )
@@ -698,11 +924,18 @@ def _add_custom_debater(
             return  # Cancel if any field empty
         values.append(val if val else default)
 
-    items.append(StanceItem(
-        name=values[0], model=values[1], style=values[2],
-        base_url=values[3], api_key=values[4],
-        selected=True, source="custom",
-    ))
+    items.append(
+        StanceItem(
+            name=values[0],
+            model=values[1],
+            style=values[2],
+            base_url=values[3],
+            api_key=values[4],
+            selected=True,
+            source="custom",
+        )
+    )
+
 
 def _edit_stance_item(
     stdscr: Any,
@@ -713,7 +946,7 @@ def _edit_stance_item(
     """Edit an existing stance item via sequential text inputs. Returns dict or None if cancelled."""
     fields = [
         ("辩手名称 (name):", item.name),
-        ("模型 ID (model):", item.model or "gpt-5.2"),
+        ("模型 ID (model):", item.model or DEFAULT_DEBATE_MODELS[0]),
         ("立场描述 (style):", item.style),
         ("API Base URL (可选):", item.base_url),
         ("API Key (可选):", item.api_key),
@@ -721,25 +954,35 @@ def _edit_stance_item(
     values: list[str] = []
 
     for prompt_text, default in fields:
+
         def _redraw(pt: str = prompt_text) -> None:
             stdscr.erase()
             draw_frame(stdscr, preview, STEP_TITLES[6], "Enter=确认  Esc=取消", lo)
-            safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                        "编辑辩手",
-                        curses.color_pair(CP_HEADER) | curses.A_BOLD)
-            safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x,
-                        pt,
-                        curses.color_pair(CP_NORMAL))
+            safe_addstr(
+                stdscr,
+                lo.ri_y,
+                lo.ri_x,
+                "编辑辩手",
+                curses.color_pair(CP_HEADER) | curses.A_BOLD,
+            )
+            safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x, pt, curses.color_pair(CP_NORMAL))
             # Show already-entered values
             for i, v in enumerate(values):
                 label = fields[i][0]
-                safe_addstr(stdscr, lo.ri_y + 4 + i, lo.ri_x,
-                            f"  {label} {v}",
-                            curses.color_pair(CP_FILLED))
+                safe_addstr(
+                    stdscr,
+                    lo.ri_y + 4 + i,
+                    lo.ri_x,
+                    f"  {label} {v}",
+                    curses.color_pair(CP_FILLED),
+                )
 
         _redraw()
         result = curses_text_input(
-            stdscr, lo.ri_y + 3, lo.ri_x, lo.ri_w,
+            stdscr,
+            lo.ri_y + 3,
+            lo.ri_x,
+            lo.ri_w,
             default=default,
             redraw=_redraw,
         )
@@ -758,7 +1001,10 @@ def _edit_stance_item(
 
 
 def _show_stance_warnings(
-    stdscr: Any, preview: TopicPreview, lo: Layout, warnings: list[str],
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    warnings: list[str],
 ) -> None:
     """Show stance check warnings in a popup-like display."""
     stdscr.erase()
@@ -769,19 +1015,27 @@ def _show_stance_warnings(
     w = lo.ri_w
 
     if not warnings:
-        safe_addstr(stdscr, y, x,
-                    "✅ 检查通过，未发现问题",
-                    curses.color_pair(CP_FILLED) | curses.A_BOLD)
+        safe_addstr(
+            stdscr,
+            y,
+            x,
+            "✅ 检查通过，未发现问题",
+            curses.color_pair(CP_FILLED) | curses.A_BOLD,
+        )
     else:
-        safe_addstr(stdscr, y, x,
-                    f"⚠ 发现 {len(warnings)} 个问题:",
-                    curses.color_pair(CP_ERROR) | curses.A_BOLD)
+        safe_addstr(
+            stdscr,
+            y,
+            x,
+            f"⚠ 发现 {len(warnings)} 个问题:",
+            curses.color_pair(CP_ERROR) | curses.A_BOLD,
+        )
         for i, warn in enumerate(warnings):
             if y + 2 + i >= lo.ri_y + lo.ri_h - 1:
                 break
-            safe_addstr(stdscr, y + 2 + i, x,
-                        f"  • {warn}"[:w],
-                        curses.color_pair(CP_ERROR))
+            safe_addstr(
+                stdscr, y + 2 + i, x, f"  • {warn}"[:w], curses.color_pair(CP_ERROR)
+            )
 
     stdscr.refresh()
     stdscr.getch()
@@ -790,6 +1044,7 @@ def _show_stance_warnings(
 # ---------------------------------------------------------------------------
 # Step 7: Debaters — edit finalized list
 # ---------------------------------------------------------------------------
+
 
 def step_debaters(
     stdscr: Any,
@@ -814,9 +1069,13 @@ def step_debaters(
         x = lo.ri_x
         w = lo.ri_w
 
-        safe_addstr(stdscr, y, x,
-                    f"辩手列表 ({len(debaters)} 位)",
-                    curses.color_pair(CP_HEADER) | curses.A_BOLD)
+        safe_addstr(
+            stdscr,
+            y,
+            x,
+            f"辩手列表 ({len(debaters)} 位)",
+            curses.color_pair(CP_HEADER) | curses.A_BOLD,
+        )
         y += 1
 
         # Render debater list
@@ -837,20 +1096,25 @@ def step_debaters(
             if idx < len(debaters):
                 d = debaters[idx]
                 line = f"  {idx + 1}. {d.get('name', '?')} | {d.get('model', '?')} | {d.get('style', '?')}"
-                attr = (curses.color_pair(CP_INPUT_HL) | curses.A_BOLD
-                        if is_cur else curses.color_pair(CP_NORMAL))
+                attr = (
+                    curses.color_pair(CP_INPUT_HL) | curses.A_BOLD
+                    if is_cur
+                    else curses.color_pair(CP_NORMAL)
+                )
             else:
                 line = "  ✔ 确认"
-                attr = (curses.color_pair(CP_FILLED) | curses.A_BOLD
-                        if is_cur else curses.color_pair(CP_FILLED))
+                attr = (
+                    curses.color_pair(CP_FILLED) | curses.A_BOLD
+                    if is_cur
+                    else curses.color_pair(CP_FILLED)
+                )
 
             safe_addstr(stdscr, y + vi, x, line[:w], attr)
 
         # Message
         if message:
             msg_y = lo.ri_y + lo.ri_h - 2
-            safe_addstr(stdscr, msg_y, x, message[:w],
-                        curses.color_pair(CP_ERROR))
+            safe_addstr(stdscr, msg_y, x, message[:w], curses.color_pair(CP_ERROR))
 
         stdscr.refresh()
         curses.curs_set(0)
@@ -906,7 +1170,12 @@ def _edit_single_debater(
     title = "添加辩手" if is_new else "编辑辩手"
     fields = [
         ("名称 (name):", current.get("name", "") if current else ""),
-        ("模型 (model):", current.get("model", "gpt-5.2") if current else "gpt-5.2"),
+        (
+            "模型 (model):",
+            current.get("model", DEFAULT_DEBATE_MODELS[0])
+            if current
+            else DEFAULT_DEBATE_MODELS[0],
+        ),
         ("立场 (style):", current.get("style", "") if current else ""),
         ("API Base URL (可选):", current.get("base_url", "") if current else ""),
         ("API Key (可选):", current.get("api_key", "") if current else ""),
@@ -914,22 +1183,34 @@ def _edit_single_debater(
     values: list[str] = []
 
     for prompt_text, default in fields:
+
         def _redraw(pt: str = prompt_text) -> None:
             stdscr.erase()
             draw_frame(stdscr, preview, STEP_TITLES[7], "Enter=确认  Esc=取消", lo)
-            safe_addstr(stdscr, lo.ri_y, lo.ri_x, title,
-                        curses.color_pair(CP_HEADER) | curses.A_BOLD)
-            safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x, pt,
-                        curses.color_pair(CP_NORMAL))
+            safe_addstr(
+                stdscr,
+                lo.ri_y,
+                lo.ri_x,
+                title,
+                curses.color_pair(CP_HEADER) | curses.A_BOLD,
+            )
+            safe_addstr(stdscr, lo.ri_y + 1, lo.ri_x, pt, curses.color_pair(CP_NORMAL))
             for i, v in enumerate(values):
                 label = fields[i][0]
-                safe_addstr(stdscr, lo.ri_y + 4 + i, lo.ri_x,
-                            f"  {label} {v}",
-                            curses.color_pair(CP_FILLED))
+                safe_addstr(
+                    stdscr,
+                    lo.ri_y + 4 + i,
+                    lo.ri_x,
+                    f"  {label} {v}",
+                    curses.color_pair(CP_FILLED),
+                )
 
         _redraw()
         result = curses_text_input(
-            stdscr, lo.ri_y + 3, lo.ri_x, lo.ri_w,
+            stdscr,
+            lo.ri_y + 3,
+            lo.ri_x,
+            lo.ri_w,
             default=default,
             redraw=_redraw,
         )
@@ -942,7 +1223,7 @@ def _edit_single_debater(
 
     output = {
         "name": values[0],
-        "model": values[1] or "gpt-5.2",
+        "model": values[1] or DEFAULT_DEBATE_MODELS[0],
         "style": values[2],
     }
     if values[3].strip():
@@ -955,6 +1236,7 @@ def _edit_single_debater(
 # ---------------------------------------------------------------------------
 # Step 8: Judge
 # ---------------------------------------------------------------------------
+
 
 def step_judge(
     stdscr: Any,
@@ -980,23 +1262,30 @@ def step_judge(
         x = lo.ri_x
         w = lo.ri_w
 
-        safe_addstr(stdscr, y, x, "裁判配置",
-                    curses.color_pair(CP_HEADER) | curses.A_BOLD)
+        safe_addstr(
+            stdscr, y, x, "裁判配置", curses.color_pair(CP_HEADER) | curses.A_BOLD
+        )
         y += 2
 
         for i, (fk, fl) in enumerate(zip(field_keys, field_labels)):
             is_cur = i == cursor
             val = str(judge.get(fk, ""))
             line = f"  {fl}: {val}"
-            attr = (curses.color_pair(CP_INPUT_HL) | curses.A_BOLD
-                    if is_cur else curses.color_pair(CP_NORMAL))
+            attr = (
+                curses.color_pair(CP_INPUT_HL) | curses.A_BOLD
+                if is_cur
+                else curses.color_pair(CP_NORMAL)
+            )
             safe_addstr(stdscr, y + i, x, line[:w], attr)
 
         # Confirm button
         confirm_y = y + len(field_keys) + 1
         is_cur = cursor == len(field_keys)
-        attr = (curses.color_pair(CP_FILLED) | curses.A_BOLD
-                if is_cur else curses.color_pair(CP_FILLED))
+        attr = (
+            curses.color_pair(CP_FILLED) | curses.A_BOLD
+            if is_cur
+            else curses.color_pair(CP_FILLED)
+        )
         safe_addstr(stdscr, confirm_y, x, "  ✔ 确认", attr)
 
         stdscr.refresh()
@@ -1020,13 +1309,20 @@ def step_judge(
             def _redraw_edit(fl: str = fl) -> None:
                 stdscr.erase()
                 draw_frame(stdscr, preview, STEP_TITLES[8], "Enter=确认  Esc=取消", lo)
-                safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                            f"编辑: {fl}",
-                            curses.color_pair(CP_HEADER) | curses.A_BOLD)
+                safe_addstr(
+                    stdscr,
+                    lo.ri_y,
+                    lo.ri_x,
+                    f"编辑: {fl}",
+                    curses.color_pair(CP_HEADER) | curses.A_BOLD,
+                )
 
             _redraw_edit()
             result = curses_text_input(
-                stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w,
+                stdscr,
+                lo.ri_y + 2,
+                lo.ri_x,
+                lo.ri_w,
                 default=str(judge.get(fk, "")),
                 redraw=_redraw_edit,
             )
@@ -1044,8 +1340,12 @@ def step_judge(
 # Step 9: Constraints
 # ---------------------------------------------------------------------------
 
+
 def step_constraints(
-    stdscr: Any, preview: TopicPreview, lo: Layout, current: str,
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    current: str,
 ) -> str | object:
     """Step 10: Constraints (optional multiline)."""
     preview.active_field = "constraints"
@@ -1054,13 +1354,21 @@ def step_constraints(
     def _redraw() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[9], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "约束条件 (可选，Ctrl+D=跳过)",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            lo.ri_y,
+            lo.ri_x,
+            "约束条件 (可选，Ctrl+D=跳过)",
+            curses.color_pair(CP_NORMAL),
+        )
 
     _redraw()
     result = curses_multiline_input(
-        stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w, lo.ri_h - 2,
+        stdscr,
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
+        lo.ri_h - 2,
         default=current or DEFAULT_CONSTRAINTS,
         redraw=_redraw,
     )
@@ -1072,6 +1380,7 @@ def step_constraints(
 # ---------------------------------------------------------------------------
 # Step 10: Round tasks
 # ---------------------------------------------------------------------------
+
 
 def step_round_tasks(
     stdscr: Any,
@@ -1104,29 +1413,40 @@ def step_round_tasks(
         x = lo.ri_x
         w = lo.ri_w
 
-        safe_addstr(stdscr, y, x, "各轮任务 (可选，Enter 编辑，默认值已预填)",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            y,
+            x,
+            "各轮任务 (可选，Enter 编辑，默认值已预填)",
+            curses.color_pair(CP_NORMAL),
+        )
         y += 2
 
         for i, (tk, tl) in enumerate(zip(task_keys, task_labels)):
             is_cur = i == cursor
             val = tasks[tk]
             # Show summary
-            summary = val.split("\n")[0][:w - len(tl) - 10]
+            summary = val.split("\n")[0][: w - len(tl) - 10]
             if val == task_defaults[i]:
                 tag = "(默认)"
             else:
                 tag = "(自定义)"
             line = f"  {tl}: {summary} {tag}"
-            attr = (curses.color_pair(CP_INPUT_HL) | curses.A_BOLD
-                    if is_cur else curses.color_pair(CP_NORMAL))
+            attr = (
+                curses.color_pair(CP_INPUT_HL) | curses.A_BOLD
+                if is_cur
+                else curses.color_pair(CP_NORMAL)
+            )
             safe_addstr(stdscr, y + i * 2, x, line[:w], attr)
 
         # Confirm button
         confirm_y = y + len(task_keys) * 2 + 1
         is_cur = cursor == len(task_keys)
-        attr = (curses.color_pair(CP_FILLED) | curses.A_BOLD
-                if is_cur else curses.color_pair(CP_FILLED))
+        attr = (
+            curses.color_pair(CP_FILLED) | curses.A_BOLD
+            if is_cur
+            else curses.color_pair(CP_FILLED)
+        )
         safe_addstr(stdscr, confirm_y, x, "  ✔ 确认", attr)
 
         stdscr.refresh()
@@ -1156,13 +1476,21 @@ def step_round_tasks(
             def _redraw_task(tl: str = tl) -> None:
                 stdscr.erase()
                 draw_frame(stdscr, preview, STEP_TITLES[10], edit_help, lo)
-                safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                            f"编辑: {tl}",
-                            curses.color_pair(CP_HEADER) | curses.A_BOLD)
+                safe_addstr(
+                    stdscr,
+                    lo.ri_y,
+                    lo.ri_x,
+                    f"编辑: {tl}",
+                    curses.color_pair(CP_HEADER) | curses.A_BOLD,
+                )
 
             _redraw_task()
             result = curses_multiline_input(
-                stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w, lo.ri_h - 2,
+                stdscr,
+                lo.ri_y + 2,
+                lo.ri_x,
+                lo.ri_w,
+                lo.ri_h - 2,
                 default=tasks[tk],
                 redraw=_redraw_task,
             )
@@ -1174,8 +1502,12 @@ def step_round_tasks(
 # Step 11: Judge instructions
 # ---------------------------------------------------------------------------
 
+
 def step_judge_instructions(
-    stdscr: Any, preview: TopicPreview, lo: Layout, current: str,
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    current: str,
 ) -> str | object:
     """Step 12: Judge instructions (optional multiline)."""
     preview.active_field = "judge_instructions"
@@ -1184,13 +1516,21 @@ def step_judge_instructions(
     def _redraw() -> None:
         stdscr.erase()
         draw_frame(stdscr, preview, STEP_TITLES[11], help_text, lo)
-        safe_addstr(stdscr, lo.ri_y, lo.ri_x,
-                    "裁判指令 (可选，默认值已预填)",
-                    curses.color_pair(CP_NORMAL))
+        safe_addstr(
+            stdscr,
+            lo.ri_y,
+            lo.ri_x,
+            "裁判指令 (可选，默认值已预填)",
+            curses.color_pair(CP_NORMAL),
+        )
 
     _redraw()
     result = curses_multiline_input(
-        stdscr, lo.ri_y + 2, lo.ri_x, lo.ri_w, lo.ri_h - 2,
+        stdscr,
+        lo.ri_y + 2,
+        lo.ri_x,
+        lo.ri_w,
+        lo.ri_h - 2,
         default=current or DEFAULT_JUDGE_INSTRUCTIONS,
         redraw=_redraw,
     )
@@ -1203,8 +1543,13 @@ def step_judge_instructions(
 # Step 12: Preview — scrollable .md preview
 # ---------------------------------------------------------------------------
 
+
 def step_preview(
-    stdscr: Any, preview: TopicPreview, lo: Layout, content: str, out_path: Any,
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    content: str,
+    out_path: Any,
 ) -> bool | object:
     """Step 13: Full-screen scrollable preview of generated .md file."""
     curses.curs_set(0)
@@ -1227,8 +1572,13 @@ def step_preview(
         stdscr.erase()
         max_y, max_x = stdscr.getmaxyx()
 
-        safe_addstr(stdscr, 0, 2, " 预览 — 生成的 .md 文件 ",
-                    curses.color_pair(CP_HEADER) | curses.A_BOLD)
+        safe_addstr(
+            stdscr,
+            0,
+            2,
+            " 预览 — 生成的 .md 文件 ",
+            curses.color_pair(CP_HEADER) | curses.A_BOLD,
+        )
 
         content_h = max_y - 3
         for i in range(content_h):
@@ -1236,13 +1586,14 @@ def step_preview(
             if li >= len(display_lines):
                 break
             text, attr = display_lines[li]
-            safe_addstr(stdscr, i + 1, 2, text[:max_x - 4], attr)
+            safe_addstr(stdscr, i + 1, 2, text[: max_x - 4], attr)
 
         total = len(display_lines)
         pct = min(100, int((scroll + content_h) / max(total, 1) * 100))
         help_line = f"y=保存  n/Esc=返回编辑  ↑↓/j/k/PgUp/PgDn=滚动  ({pct}%)"
-        safe_addstr(stdscr, max_y - 1, 2, help_line[:max_x - 4],
-                    curses.color_pair(CP_HELP))
+        safe_addstr(
+            stdscr, max_y - 1, 2, help_line[: max_x - 4], curses.color_pair(CP_HELP)
+        )
 
         stdscr.refresh()
         key = stdscr.getch()
@@ -1265,38 +1616,44 @@ def step_preview(
 # Step 13: Success
 # ---------------------------------------------------------------------------
 
-def step_success(stdscr: Any, preview: TopicPreview, lo: Layout, out_path: Any, run_cmd: str, dryrun_cmd: str) -> None:
+
+def step_success(
+    stdscr: Any,
+    preview: TopicPreview,
+    lo: Layout,
+    out_path: Any,
+    run_cmd: str,
+    dryrun_cmd: str,
+) -> None:
     """Final screen: show success message and run commands."""
     curses.curs_set(0)
     stdscr.erase()
     max_y, max_x = stdscr.getmaxyx()
 
     lines: list[tuple[str, int]] = [
-        (f"✅ 辩论议题文件已保存: ./{str(out_path)}",
-         curses.color_pair(CP_FILLED) | curses.A_BOLD),
+        (
+            f"✅ 辩论议题文件已保存: ./{str(out_path)}",
+            curses.color_pair(CP_FILLED) | curses.A_BOLD,
+        ),
         ("", curses.color_pair(CP_NORMAL)),
-        ("运行辩论:",
-         curses.color_pair(CP_HEADER) | curses.A_BOLD),
-        (f"  {run_cmd}",
-         curses.color_pair(CP_NORMAL)),
+        ("运行辩论:", curses.color_pair(CP_HEADER) | curses.A_BOLD),
+        (f"  {run_cmd}", curses.color_pair(CP_NORMAL)),
         ("", curses.color_pair(CP_NORMAL)),
-        ("预览配置 (dry-run):",
-         curses.color_pair(CP_HEADER) | curses.A_BOLD),
-        (f"  {dryrun_cmd}",
-         curses.color_pair(CP_NORMAL)),
+        ("预览配置 (dry-run):", curses.color_pair(CP_HEADER) | curses.A_BOLD),
+        (f"  {dryrun_cmd}", curses.color_pair(CP_NORMAL)),
         ("", curses.color_pair(CP_NORMAL)),
-        ("立场生成器 (独立使用):",
-         curses.color_pair(CP_HEADER) | curses.A_BOLD),
-        (f"  python -m debate_tool.stance ./{str(out_path)}",
-         curses.color_pair(CP_NORMAL)),
+        ("立场生成器 (独立使用):", curses.color_pair(CP_HEADER) | curses.A_BOLD),
+        (
+            f"  python -m debate_tool.stance ./{str(out_path)}",
+            curses.color_pair(CP_NORMAL),
+        ),
         ("", curses.color_pair(CP_NORMAL)),
-        ("按任意键退出",
-         curses.color_pair(CP_HELP)),
+        ("按任意键退出", curses.color_pair(CP_HELP)),
     ]
 
     cy = max(max_y // 2 - len(lines) // 2, 2)
     for i, (text, attr) in enumerate(lines):
-        safe_addstr(stdscr, cy + i, 4, text[:max_x - 8], attr)
+        safe_addstr(stdscr, cy + i, 4, text[: max_x - 8], attr)
 
     stdscr.refresh()
     stdscr.getch()

@@ -10,6 +10,7 @@ Library usage:
     from debate_tool.stance import generate_stances, generate_stances_sync
     result = generate_stances_sync(topic_text)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,54 +25,47 @@ from typing import Any
 
 import httpx
 
+from debate_tool.core import DEFAULT_DEBATE_MODELS
+
 # ── Data structures ──────────────────────────────────────────────────
+
 
 @dataclass
 class StanceRecommendation:
-    """A single recommended debater configuration."""
-    name: str   # Display name, e.g. "GPT-5.2"
-    model: str  # Model ID, defaults to gpt-5.2 if missing
-    style: str  # Stance description, e.g. "精简派：追求最少改动、最低误伤风险"
+    name: str
+    model: str
+    style: str
 
 
 @dataclass
 class StanceResult:
-    """Complete output from the stance generator."""
-    debaters: list[StanceRecommendation]  # 3+ recommended debaters
-    topic_angles: list[str]               # Key debate angles identified
-    reasoning: str                        # Why these stances were chosen
-    raw_response: str = ""                # Raw LLM response for debugging
+    debaters: list[StanceRecommendation]
+    topic_angles: list[str]
+    reasoning: str
+    raw_response: str = ""
 
 
 # ── Resolve API config ───────────────────────────────────────────────
 
+
 def _resolve_config(base_url: str, api_key: str) -> tuple[str, str]:
     """Resolve API config: function args > env vars."""
-    url = (
-        base_url
-        or os.environ.get("DEBATE_BASE_URL", "")
-    )
-    key = (
-        api_key
-        or os.environ.get("DEBATE_API_KEY", "")
-    )
+    url = base_url or os.environ.get("DEBATE_BASE_URL", "")
+    key = api_key or os.environ.get("DEBATE_API_KEY", "")
     return url.strip(), key.strip()
 
 
 # ── System prompt builder ────────────────────────────────────────────
 
+
 def _build_system_prompt(num_debaters: int, user_prompt: str) -> str:
-    user_prompt_section = (
-        f"\n\n用户额外指示：{user_prompt}" if user_prompt else ""
-    )
+    user_prompt_section = f"\n\n用户额外指示：{user_prompt}" if user_prompt else ""
     return (
         f"你是一个辩论策划专家。分析给定的辩论议题，推荐 {num_debaters} 个辩手配置。\n"
         "\n"
         "每个辩手需要：\n"
-        "1. name: 显示名称（通常是 LLM 模型名，如 GPT-5.2、Kimi-K2.5、Sonnet-4-6）\n"
-        "2. model: 模型 ID（可选；若不提供将默认使用 gpt-5.2）\n"
-        '3. style: 立场描述（格式："立场名：具体说明"，如 "精简派：追求最少改动、最低误伤风险"）\n'
-        "   - 不要输出 URL 或 API Key\n"
+        "1. name: 显示名称（立场代号，如 务实派、挑战者、分析师）\n"
+        '2. style: 立场描述（格式："立场名：具体说明"，如 "精简派：追求最少改动、最低误伤风险"）\n'
         "\n"
         "立场设计原则：\n"
         "- 辩手之间应形成有效对立或互补，避免同质化\n"
@@ -90,7 +84,7 @@ def _build_system_prompt(num_debaters: int, user_prompt: str) -> str:
         "```json\n"
         "{\n"
         '  "debaters": [\n'
-        '    {"name": "...", "model": "...", "style": "..."},\n'
+        '    {"name": "...", "style": "..."},\n'
         "    ...\n"
         "  ],\n"
         '  "topic_angles": ["角度1", "角度2", ...],\n'
@@ -101,6 +95,7 @@ def _build_system_prompt(num_debaters: int, user_prompt: str) -> str:
 
 
 # ── JSON extraction from LLM response ───────────────────────────────
+
 
 def _extract_json(text: str) -> dict[str, Any] | None:
     """Extract JSON from LLM response, handling markdown code fences."""
@@ -132,6 +127,7 @@ def _resolve_model(payload: dict[str, Any]) -> str:
 
 # ── Core async function ──────────────────────────────────────────────
 
+
 async def generate_stances(
     topic_text: str,
     *,
@@ -142,20 +138,6 @@ async def generate_stances(
     user_prompt: str = "",
     timeout: int = 120,
 ) -> StanceResult:
-    """Call LLM to analyze a debate topic and recommend debater configurations.
-
-    Args:
-        topic_text: The debate topic body text.
-        base_url: API base URL (falls back to env).
-        api_key: API key (falls back to env).
-        model: LLM model ID to use.
-        num_debaters: Number of debater configurations to recommend.
-        user_prompt: Additional user instructions appended to system prompt.
-        timeout: HTTP request timeout in seconds.
-
-    Returns:
-        StanceResult with recommended debaters, topic angles, and reasoning.
-    """
     url, key = _resolve_config(base_url, api_key)
     if not url:
         msg = "Missing API base URL: provide --base-url or set DEBATE_BASE_URL"
@@ -165,7 +147,6 @@ async def generate_stances(
         return StanceResult(debaters=[], topic_angles=[], reasoning=msg)
     system = _build_system_prompt(num_debaters, user_prompt)
 
-    # Truncate overly long topic text
     truncated = topic_text[:8000] if len(topic_text) > 8000 else topic_text
 
     payload = {
@@ -182,56 +163,71 @@ async def generate_stances(
         "Content-Type": "application/json",
     }
 
-    # Retry logic for 503 errors
     max_retries = 3
-    retry_delay = 2  # seconds
-    
+    retry_delay = 2
+
+    resp = None
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
-                    url.rstrip('/'),
+                    url.rstrip("/"),
                     json=payload,
                     headers=headers,
                 )
-                
-                # If 503, retry with delay
+
                 if resp.status_code == 503:
                     if attempt < max_retries - 1:
-                        print(f"[stance] 503 错误，{retry_delay}秒后重试 (尝试 {attempt + 1}/{max_retries})...", file=sys.stderr)
+                        print(
+                            f"[stance] 503 错误，{retry_delay}秒后重试 (尝试 {attempt + 1}/{max_retries})...",
+                            file=sys.stderr,
+                        )
                         await asyncio.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
+                        retry_delay *= 2
                         continue
                     else:
                         msg = f"LLM API 返回 503 (服务暂时不可用，已重试 {max_retries} 次)"
                         print(f"[stance] ERROR: {msg}", file=sys.stderr)
                         return StanceResult(
-                            debaters=[], topic_angles=[], reasoning=msg,
+                            debaters=[],
+                            topic_angles=[],
+                            reasoning=msg,
                             raw_response=resp.text,
                         )
-                
+
                 resp.raise_for_status()
-                break  # Success, exit retry loop
-                
+                break
+
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 503:
                 if attempt < max_retries - 1:
-                    print(f"[stance] 503 错误，{retry_delay}秒后重试 (尝试 {attempt + 1}/{max_retries})...", file=sys.stderr)
+                    print(
+                        f"[stance] 503 错误，{retry_delay}秒后重试 (尝试 {attempt + 1}/{max_retries})...",
+                        file=sys.stderr,
+                    )
                     await asyncio.sleep(retry_delay)
                     retry_delay *= 2
                     continue
             msg = f"LLM API 返回 HTTP {exc.response.status_code}"
             print(f"[stance] ERROR: {msg}", file=sys.stderr)
             return StanceResult(
-                debaters=[], topic_angles=[], reasoning=msg,
+                debaters=[],
+                topic_angles=[],
+                reasoning=msg,
                 raw_response=exc.response.text,
             )
         except httpx.RequestError as exc:
             msg = f"LLM API request failed: {exc}"
             print(f"[stance] ERROR: {msg}", file=sys.stderr)
             return StanceResult(
-                debaters=[], topic_angles=[], reasoning=msg,
+                debaters=[],
+                topic_angles=[],
+                reasoning=msg,
             )
+
+    if resp is None:
+        msg = "LLM API request failed: no response received"
+        return StanceResult(debaters=[], topic_angles=[], reasoning=msg)
 
     raw = resp.json()["choices"][0]["message"]["content"]
 
@@ -240,19 +236,22 @@ async def generate_stances(
         msg = "Failed to parse JSON from LLM response"
         print(f"[stance] ERROR: {msg}", file=sys.stderr)
         return StanceResult(
-            debaters=[], topic_angles=[], reasoning=msg,
+            debaters=[],
+            topic_angles=[],
+            reasoning=msg,
             raw_response=raw,
         )
 
-    # Build StanceResult from parsed data
+    models = DEFAULT_DEBATE_MODELS
     debaters: list[StanceRecommendation] = []
-    for d in parsed.get("debaters", []):
+    for i, d in enumerate(parsed.get("debaters", [])):
         if not isinstance(d, dict):
             continue
+        assigned_model = models[i % len(models)]
         debaters.append(
             StanceRecommendation(
                 name=str(d.get("name", "")).strip(),
-                model=_resolve_model(d),
+                model=assigned_model,
                 style=str(d.get("style", "")).strip(),
             )
         )
@@ -269,30 +268,18 @@ async def generate_stances(
 
 # ── Stance checker ──────────────────────────────────────────────────
 
-def check_stances(debaters: list[dict[str, str]]) -> list[str]:
-    """Check a list of debater configs for common issues.
 
-    Returns a list of warning strings (empty = all good).
-    Pure heuristic — no LLM call.
-    """
+def check_stances(debaters: list[dict[str, str]]) -> list[str]:
     warnings: list[str] = []
 
     if len(debaters) < 2:
         warnings.append("辩手数量不足：至少需要 2 位辩手才能形成有效对立")
 
     if len(debaters) > 7:
-        warnings.append(f"辩手数量过多 ({len(debaters)})：超过 7 位辩手可能导致辩论失焦")
+        warnings.append(
+            f"辩手数量过多 ({len(debaters)})：超过 7 位辩手可能导致辩论失焦"
+        )
 
-    # Check for duplicate models
-    models = [d.get("model", "") for d in debaters]
-    seen_models: dict[str, int] = {}
-    for m in models:
-        seen_models[m] = seen_models.get(m, 0) + 1
-    for m, count in seen_models.items():
-        if count > 1 and m:
-            warnings.append(f"重复模型：{m} 被 {count} 位辩手使用，可能导致观点趋同")
-
-    # Check for empty/missing fields
     for i, d in enumerate(debaters, 1):
         if not d.get("name", "").strip():
             warnings.append(f"辩手 {i}：缺少名称 (name)")
@@ -301,28 +288,30 @@ def check_stances(debaters: list[dict[str, str]]) -> list[str]:
         if not d.get("style", "").strip():
             warnings.append(f"辩手 {i}：缺少立场描述 (style)")
 
-    # Check for style similarity (simple substring overlap)
-    styles = [d.get("style", "").strip() for d in debaters if d.get("style", "").strip()]
+    styles = [
+        d.get("style", "").strip() for d in debaters if d.get("style", "").strip()
+    ]
     for i in range(len(styles)):
         for j in range(i + 1, len(styles)):
-            # Extract the "派" label before colon if present
             label_i = styles[i].split("：")[0].split(":")[0].strip()
             label_j = styles[j].split("：")[0].split(":")[0].strip()
             if label_i and label_j and label_i == label_j:
                 warnings.append(
-                    f"立场标签重复：辩手 {i+1} 和辩手 {j+1} 都使用 \"{label_i}\""
+                    f'立场标签重复：辩手 {i + 1} 和辩手 {j + 1} 都使用 "{label_i}"'
                 )
 
     return warnings
 
+
 # ── Sync wrapper ─────────────────────────────────────────────────────
 
+
 def generate_stances_sync(topic_text: str, **kwargs: Any) -> StanceResult:
-    """Synchronous wrapper for generate_stances()."""
     return asyncio.run(generate_stances(topic_text, **kwargs))
 
 
 # ── Formatting helpers ───────────────────────────────────────────────
+
 
 def format_stances_json(result: StanceResult) -> str:
     """Format StanceResult as pretty JSON."""
@@ -342,7 +331,6 @@ def format_stances_json(result: StanceResult) -> str:
 
 
 def format_stances_yaml(result: StanceResult) -> str:
-    """Format debaters as YAML snippet (for embedding in topic files)."""
     lines = ["debaters:"]
     for d in result.debaters:
         lines.append(f'  - name: "{d.name}"')
@@ -351,10 +339,7 @@ def format_stances_yaml(result: StanceResult) -> str:
     return "\n".join(lines) + "\n"
 
 
-# ── Topic file reading ───────────────────────────────────────────────
-
 def _read_topic_body(path: Path) -> str:
-    """Read topic file, stripping YAML front-matter if present."""
     text = path.read_text(encoding="utf-8")
     if text.startswith("---"):
         parts = text.split("---", 2)
@@ -365,8 +350,8 @@ def _read_topic_body(path: Path) -> str:
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main(argv=None) -> None:
-    """CLI: python -m debate_tool.stance topic.md [--model MODEL] [--num N] [--prompt TEXT] [--format json|yaml]"""
     parser = argparse.ArgumentParser(
         description="LLM-powered debate stance / debater-configuration generator",
     )
@@ -417,7 +402,10 @@ def main(argv=None) -> None:
 
     topic_body = _read_topic_body(args.topic)
     if not topic_body.strip():
-        print("[stance] ERROR: topic file is empty (after stripping front-matter)", file=sys.stderr)
+        print(
+            "[stance] ERROR: topic file is empty (after stripping front-matter)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     result = generate_stances_sync(

@@ -327,14 +327,11 @@ details .details-body { margin-top: 8px; font-size: 13px; color: #4b5563; white-
         <div style="font-weight:600;margin-bottom:10px">🤖 AI 立场生成器</div>
         <div class="row mb-8">
           <div>
-            <label class="field-label">生成模型</label>
-            <input type="text" id="stanceModel" value="gpt-5.2">
-          </div>
-          <div>
             <label class="field-label">辩手数量</label>
             <input type="number" id="stanceNum" value="3" min="2" max="10">
           </div>
         </div>
+        <div class="helper mb-8">辩手模型由环境变量 <code>DEFAULT_DEBATE_MODELS</code> 循环分配（当前：<span id="currentModels">gpt-5.2</span>）</div>
         <div class="mb-8">
           <label class="field-label">附加要求（可选）</label>
           <input type="text" id="stancePrompt" placeholder="例：需要一个红队攻击手">
@@ -624,7 +621,6 @@ async function doGenerateStances(mode) {
       topic_body: topicBody,
       base_url: $('baseUrl').value.trim(),
       api_key: $('apiKey').value.trim(),
-      model: $('stanceModel').value,
       num_debaters: parseInt($('stanceNum').value) || 3,
       user_prompt: $('stancePrompt').value,
     };
@@ -682,6 +678,9 @@ async function init() {
     $('judgeMaxTokens').value = d.judge.max_tokens || 8000;
 
     state.debaters = (d.debaters || []).map(x => ({ ...x }));
+    if (d.debate_models && d.debate_models.length > 0) {
+      $('currentModels').textContent = d.debate_models.join(', ');
+    }
     renderDebaters();
     updatePreview();
   } catch (e) {
@@ -711,7 +710,7 @@ async function init() {
   $('testApiBtn').addEventListener('click', async () => {
     const baseUrl = $('baseUrl').value.trim();
     const apiKey = $('apiKey').value.trim();
-    const stanceModel = $('stanceModel').value.trim();
+    const defaultModel = $('defaultModel').value.trim();
     
     if (!baseUrl) {
       alert('请先填写 API 端点');
@@ -730,7 +729,7 @@ async function init() {
       const data = await api('/api/test-api', {
         base_url: baseUrl,
         api_key: apiKey,
-        model: stanceModel || 'gpt-5.2',
+        model: defaultModel || 'gpt-5.2',
       });
       
       const resultDiv = $('testApiResult');
@@ -764,7 +763,7 @@ async function init() {
     const title = $('title').value.trim();
     const baseUrl = $('baseUrl').value.trim();
     const apiKey = $('apiKey').value.trim();
-    const stanceModel = $('stanceModel').value.trim();
+    const defaultModel = $('defaultModel').value.trim();
     
     if (!title) {
       alert('请先填写辩论标题');
@@ -788,7 +787,7 @@ async function init() {
         title: title,
         base_url: baseUrl,
         api_key: apiKey,
-        model: stanceModel || 'gpt-5.2',
+        model: defaultModel || 'gpt-5.2',
       });
       
       const resultDiv = $('generateTopicBodyResult');

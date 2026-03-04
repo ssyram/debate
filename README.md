@@ -113,6 +113,17 @@ export DEBATE_API_KEY=your_api_key
 export DEBATE_BASE_URL=your_api_base_url
 ```
 
+### 辩手模型列表
+
+`DEFAULT_DEBATE_MODELS` 环境变量控制辩手的默认模型，逗号分隔，循环分配给每位辩手（第 i 位辩手使用 `models[i % len(models)]`）：
+
+```bash
+export DEFAULT_DEBATE_MODELS="gpt-5.2,kimi-k2.5,MiniMax-M2.5"
+```
+
+- 未设置时默认全部使用 `gpt-5.2`
+- 立场生成器生成的辩手立场将自动按此列表循环分配模型，不再由 LLM 推荐
+
 ## 4. YAML 字段参考
 
 话题文件以 `---` 包裹的 YAML 块开头：
@@ -200,12 +211,12 @@ early_stop: 0.7        # 自定义阈值 70%
 
 ## 5. 立场生成器
 
-`stance` 子命令是独立的 LLM 驱动立场生成器，根据议题自动推荐辩手配置。
+`stance` 子命令是独立的 LLM 驱动立场生成器，根据议题自动推荐辩手立场。辩手模型由环境变量 `DEFAULT_DEBATE_MODELS` 循环分配，不再由 LLM 推荐。
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `topic` | 话题 `.md` 文件路径（必填） | — |
-| `--model MODEL` | 生成所用 LLM | `gpt-5.2` |
+| `--model MODEL` | 分析议题所用 LLM | `gpt-5.2` |
 | `--num N` | 辩手数量 | 3 |
 | `--prompt TEXT` | 附加生成指令 | — |
 | `--format json\|yaml` | 输出格式 | `json` |
@@ -217,7 +228,7 @@ early_stop: 0.7        # 自定义阈值 70%
 ```python
 from debate_tool.stance import generate_stances_sync, format_stances_json
 
-result = generate_stances_sync(topic_body, model="gpt-5.2", num_debaters=3)
+result = generate_stances_sync(topic_body, num_debaters=3)
 print(format_stances_json(result))
 ```
 
