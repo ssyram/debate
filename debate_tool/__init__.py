@@ -1,2 +1,2 @@
-"""Debate Topic Wizard — 交互式辩论议题文件生成器"""
+"""debate-tool — 多模型辩论框架"""
 __version__ = "0.1.0"

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "debate-tool"
+version = "0.1.0"
+description = "多模型辩论框架 — 多辩手并行辩论 + 裁判裁决"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "httpx",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+cli = [
+    "rich>=13.0",
+    "click>=8.0",
+]
+web = [
+    "flask>=3.0",
+]
+all = [
+    "rich>=13.0",
+    "click>=8.0",
+    "flask>=3.0",
+]
+
+[project.scripts]
+debate-tool = "debate_tool.__main__:main"

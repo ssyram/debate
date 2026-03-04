@@ -1,0 +1,6 @@
+# debate-tool 全量依赖 — 安装所有组件
+# 用法: pip install -r requirements/all.txt
+-r core.txt
+rich>=13.0
+click>=8.0
+flask>=3.0

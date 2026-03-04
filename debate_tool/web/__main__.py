@@ -8,13 +8,13 @@ import time
 import webbrowser
 
 
-def main() -> None:
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description="辩论议题向导 — Web 版")
     parser.add_argument("--port", "-p", type=int, default=5000, help="端口 (默认 5000)")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="绑定地址")
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     parser.add_argument("--debug", action="store_true", help="Flask debug 模式")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     from debate_tool.web.app import create_app
 

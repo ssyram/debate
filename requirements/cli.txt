@@ -1,0 +1,5 @@
+# debate-tool CLI/TUI 依赖 — 命令行向导界面（curses 为 Python 标准库，无需额外安装）
+# 用法: pip install -r requirements/cli.txt
+-r core.txt
+rich>=13.0
+click>=8.0

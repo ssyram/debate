@@ -1,5 +1,3 @@
-httpx
-pyyaml
-rich>=13.0
-click>=8.0
-flask>=3.0
+# debate-tool 全量依赖（向后兼容入口）
+# 按需安装请使用 requirements/ 目录下的分类文件，或运行 python install.py
+-r requirements/all.txt

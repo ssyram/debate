@@ -3,105 +3,90 @@
 多模型辩论框架，支持 N(>= 2) 个辩手并行多轮辩论，最终由裁判模型给出裁决。
 
 提供两种使用界面：
-- **命令行 TUI 向导** — 双栏 Curses 界面，14 步生成辩论配置文件
 - **Web 向导** — 响应式单页应用，实时预览，一键提交生成
+- **命令行 TUI 向导** — 双栏 Curses 界面，14 步生成辩论配置文件
 
 ## 1. 安装
 
 **依赖：Python 3.11+**
 
+### 推荐方式：pip install
+
 ```bash
 git clone <repo-url>
 cd debate-tool
-pip install -r requirements.txt
+pip install ".[all]"       # 全量安装所有功能
 ```
 
-依赖：`httpx`、`pyyaml`、`rich`、`click`、`flask`
+按需安装：
+
+```bash
+pip install .              # 仅核心（httpx, pyyaml）→ 可运行辩论
+pip install ".[cli]"       # 核心 + CLI（rich, click）→ TUI 向导
+pip install ".[web]"       # 核心 + Web（flask）→ Web 向导
+pip install ".[all]"       # 全部功能
+```
+
+### 安装脚本（替代方式）
+
+```bash
+python install.py          # 交互式菜单
+python install.py --all    # 全量安装所有依赖
+python install.py --skill  # 安装 Claude Code /debate 命令
+python install.py --env    # 设置 DEBATE_TOOL_DIR 环境变量
+```
+
+> **Windows 用户**：TUI 向导依赖 `curses`（macOS/Linux 内置）。Windows 上需额外安装 `windows-curses`，`install.py` 会自动处理。若 TUI 不可用，可使用 Web 向导作为替代。
 
 ## 2. 快速开始
 
-### 方法一：Web 向导（推荐）
+### 生成辩论配置
 
 ```bash
-python -m debate_tool.web
-# 自动打开浏览器本地地址（由 host/port 决定）
-```
+# Web 向导（推荐，默认）
+debate-tool build
 
-Web 版与 CLI 版逻辑完全一致，支持宽屏双栏（左侧实时预览 + 右侧表单）和窄屏上下堆叠布局。
+# TUI 向导
+debate-tool build --cli
 
-### 方法二：命令行 TUI 向导
-
-```bash
-python new_debate.py
-# 或
-python -m debate_tool
-```
-
-双栏 Curses TUI，左栏实时预览 YAML，右栏输入表单，共 14 步：
-
-1. 辩论标题
-2. 输出路径
-3. 轮数设置
-4. API 端点（`base_url`，可选）
-5. API 密钥（`api_key`，可选）
-6. 话题正文（内联输入或指定外部文件）
-7. 立场生成器（可选，AI 驱动）
-8. 辩手配置（≥2 名，强制校验）
-9. 裁判配置（默认 claude-opus-4-6）
-10. 约束条件（注入 system prompt）
-11. 各轮任务说明（第一轮 / 中间轮 / 最后一轮）
-12. 裁判指令
-13. 预览（可滚动）并确认生成
-14. 成功提示（显示文件路径与运行命令）
-
-CLI 选项：
-
-```bash
-python -m debate_tool --output PATH       # 指定输出文件路径
-python -m debate_tool --topic-file PATH   # 指定话题文件（跳过部分步骤）
-```
-
-Web 选项：
-
-```bash
-python -m debate_tool.web --port 8080     # 指定端口
-python -m debate_tool.web --no-browser    # 不自动打开浏览器
-```
-
-### 方法三：使用模板文件
-
-```bash
+# 也可直接用模板
 cp template.md my_topic.md
 # 编辑 my_topic.md，填写 YAML 元数据和话题内容
-python debate.py my_topic.md
 ```
 
-## 3. 运行辩论
+### 运行辩论
 
 ```bash
 # 基本运行
-python debate.py my_topic.md
+debate-tool run my_topic.md
 
 # 覆盖轮数
-python debate.py my_topic.md --rounds 5
+debate-tool run my_topic.md --rounds 5
 
 # 试运行（仅校验配置，不调用 API）
-python debate.py my_topic.md --dry-run
+debate-tool run my_topic.md --dry-run
 ```
+
+### 生成辩手立场
+
+```bash
+debate-tool stance my_topic.md
+debate-tool stance my_topic.md --num 5 --format yaml
+```
+
+> 所有命令也可通过 `python -m debate_tool <command>` 调用。
 
 **输出文件**：
 - `{stem}_debate_log.md` — 完整辩论记录（每轮每位辩手发言）
 - `{stem}_debate_summary.md` — 裁判结构化裁决
 
-## 4. API 配置
+## 3. API 配置
 
 优先级（从高到低）：
 
 1. 角色级配置（`debaters[].base_url` / `debaters[].api_key`，以及 `judge.base_url` / `judge.api_key`）
 2. 话题文件全局 `base_url` / `api_key`
 3. 环境变量 `DEBATE_BASE_URL` / `DEBATE_API_KEY`
-
-说明：你可以为不同辩手配置不同供应商端点和密钥；未配置时自动回退到全局配置或环境变量。
 
 建议将 API 密钥配置为环境变量，避免写入版本控制：
 
@@ -110,7 +95,7 @@ export DEBATE_API_KEY=your_api_key
 export DEBATE_BASE_URL=your_api_base_url
 ```
 
-## 5. YAML 字段参考
+## 4. YAML 字段参考
 
 话题文件以 `---` 包裹的 YAML 块开头：
 
@@ -155,28 +140,9 @@ judge:
 在此输入辩论议题的详细背景与讨论要点...
 ```
 
-## 6. 立场生成器
+## 5. 立场生成器
 
-`stance.py` 是独立的 LLM 驱动立场生成器，根据议题自动推荐辩手配置。
-
-说明：立场生成结果若未返回 `model`，系统会默认使用 `gpt-5.2`。
-在 TUI/Web 向导中，你可以在后续步骤手动修改每位辩手的 `model`，并可按需填写 `base_url` / `api_key`（可留空）。
-
-### 独立 CLI
-
-```bash
-# 基本用法（JSON 输出到 stdout）
-python -m debate_tool.stance my_topic.md
-
-# 指定模型和辩手数量
-python -m debate_tool.stance my_topic.md --model gpt-5.2 --num 4
-
-# 输出 YAML 格式
-python -m debate_tool.stance my_topic.md --format yaml
-
-# 附加自定义要求
-python -m debate_tool.stance my_topic.md --prompt "需要一个红队攻击手"
-```
+`stance` 子命令是独立的 LLM 驱动立场生成器，根据议题自动推荐辩手配置。
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
@@ -197,43 +163,35 @@ result = generate_stances_sync(topic_body, model="gpt-5.2", num_debaters=3)
 print(format_stances_json(result))
 ```
 
-### TUI 向导立场工作区快捷键
-
-| 键 | 操作 |
-|----|------|
-| `Space` | 切换选中/取消选中 |
-| `Enter` | 确认（需 ≥2 个选中） |
-| `C` | 继续生成（纯追加） |
-| `R` | 重新生成（保留已选，移除未选，追加新） |
-| `A` | 添加自定义辩手 |
-| `E` | 编辑当前辩手 |
-| `D` | 删除当前辩手 |
-| `V` | 立场检验（启发式警告） |
-| `Esc` | 跳过/返回 |
-
-## 7. 文件结构
+## 6. 文件结构
 
 ```
 debate-tool/
-├── .gitignore
-├── README.md
-├── requirements.txt
-├── debate.py              # 辩论运行器
-├── new_debate.py          # TUI 向导启动器
+├── pyproject.toml         # 包配置 + 入口点 + extras
+├── install.py             # 安装脚本（交互式 + CLI，纯标准库）
+├── install-skills.sh      # Claude Code Skill 安装（Shell 版）
 ├── template.md            # 话题文件模板
+├── v2_mechanism_roadmap.md # 辩论机制 v2 改进路线图
+├── requirements/          # 传统 requirements 文件（向后兼容）
+│   ├── core.txt
+│   ├── cli.txt
+│   ├── web.txt
+│   └── all.txt
 └── debate_tool/
     ├── __init__.py        # 版本
-    ├── __main__.py        # CLI 入口 + 14 步状态机
+    ├── __main__.py        # 统一入口路由（run / build / stance）
+    ├── runner.py          # 辩论运行器（核心引擎）
+    ├── wizard.py          # TUI 向导（14 步状态机）
     ├── core.py            # 纯逻辑：默认值、YAML 生成、文件 I/O
     ├── ui.py              # Curses TUI 基础组件
     ├── stance.py          # 立场生成器（可独立使用）
     ├── steps.py           # 14 步向导步骤函数
     └── web/
         ├── __init__.py
-        ├── __main__.py    # Web 入口（argparse + 自动打开浏览器）
-        ├── app.py         # Flask 路由 + 7 个 API 端点
+        ├── __main__.py    # Web 入口
+        ├── app.py         # Flask 路由 + API 端点
         └── templates/
-            └── wizard.html  # 单页应用（HTML + CSS + JS）
+            └── wizard.html
 ```
 
 ## License

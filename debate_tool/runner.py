@@ -3,9 +3,9 @@
 通用辩论框架 — 读取 Markdown + YAML front-matter 驱动多模型辩论。
 
 用法:
-    python debate.py my_topic.md
-    python debate.py my_topic.md --rounds 5
-    python debate.py my_topic.md --dry-run
+    debate-tool run my_topic.md
+    debate-tool run my_topic.md --rounds 5
+    debate-tool run my_topic.md --dry-run
 """
 import argparse
 import asyncio
@@ -17,16 +17,11 @@ from pathlib import Path
 import httpx
 import yaml
 
+from debate_tool.core import DEFAULT_DEBATERS, DEFAULT_JUDGE
+
 # ── 环境变量 ────────────────────────────────────────────
 ENV_BASE_URL = os.environ.get("DEBATE_BASE_URL", "").strip()
 ENV_API_KEY = os.environ.get("DEBATE_API_KEY", "").strip()
-
-DEFAULT_DEBATERS = [
-    {"name": "GPT-5.2",    "model": "gpt-5.2",          "style": "务实工程派"},
-    {"name": "Kimi-K2.5",  "model": "kimi-k2.5",        "style": "创新挑战派"},
-    {"name": "Sonnet-4-6", "model": "claude-sonnet-4-6", "style": "严谨分析派"},
-]
-DEFAULT_JUDGE = {"model": "claude-opus-4-6", "name": "Opus-4-6 (裁判)", "max_tokens": 8000}
 
 
 # ── YAML Front-matter 解析 ───────────────────────────────
@@ -302,15 +297,15 @@ def _validate_api_config(cfg: dict) -> list[str]:
 
 # ── CLI ───────────────────────────────────────────────────
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="通用辩论框架 — 读取 Markdown + YAML front-matter 驱动多模型辩论",
+        description="运行辩论 — 读取 Markdown + YAML front-matter 驱动多模型辩论",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "示例:\n"
-            "  python debate.py my_topic.md\n"
-            "  python debate.py my_topic.md --rounds 5\n"
-            "  python debate.py my_topic.md --dry-run\n"
+            "  debate-tool run my_topic.md\n"
+            "  debate-tool run my_topic.md --rounds 5\n"
+            "  debate-tool run my_topic.md --dry-run\n"
             "\n"
             "环境变量:\n"
             "  DEBATE_API_KEY    API 密钥\n"
@@ -323,7 +318,7 @@ def main():
     ap.add_argument("topic", type=Path, help="议题 Markdown 文件（含 YAML front-matter）")
     ap.add_argument("--rounds", type=int, default=None, help="覆盖辩论轮数")
     ap.add_argument("--dry-run", action="store_true", help="仅解析配置，不调用 LLM")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     # 验证文件存在
     topic_path = args.topic.resolve()
@@ -368,11 +363,11 @@ def main():
         print(f"\n  API:     {effective_url}")
         print(f"  API Key: {_mask_key(effective_key) if effective_key else '(未设置)'}")
         if cfg["base_url"]:
-            print(f"  (来源: front-matter)")
+            print("  (来源: front-matter)")
         elif os.environ.get("DEBATE_BASE_URL"):
-            print(f"  (来源: 环境变量)")
+            print("  (来源: 环境变量)")
         else:
-            print(f"  (来源: 未设置)")
+            print("  (来源: 未设置)")
         if api_issues:
             print("\n  ⚠️ API 配置不完整:")
             for issue in api_issues:
@@ -383,7 +378,7 @@ def main():
         print(f"  Final:   {cfg['final_task'][:80]}...")
         if cfg["judge_instructions"]:
             print(f"  Judge:   {cfg['judge_instructions'][:80]}...")
-        print(f"\n✅ 配置有效")
+        print("\n✅ 配置有效")
         return
 
     if api_issues:

@@ -1,0 +1,4 @@
+# debate-tool Web UI 依赖 — Flask Web 向导界面
+# 用法: pip install -r requirements/web.txt
+-r core.txt
+flask>=3.0
