@@ -65,6 +65,21 @@ debate-tool run my_topic.md --rounds 5
 
 # 试运行（仅校验配置，不调用 API）
 debate-tool run my_topic.md --dry-run
+
+# 质询模式（R1 后增加质询子回合）
+debate-tool run my_topic.md --cross-exam
+
+# 指定质询轮数（R1~R3 后均质询）
+debate-tool run my_topic.md --cross-exam 3
+
+# 每轮都质询
+debate-tool run my_topic.md --cross-exam -1
+
+# 启用收敛早停
+debate-tool run my_topic.md --early-stop
+
+# 质询 + 早停
+debate-tool run my_topic.md --cross-exam --early-stop
 ```
 
 ### 生成辩手立场
@@ -105,6 +120,8 @@ export DEBATE_BASE_URL=your_api_base_url
 | `rounds` | int | 3 | 辩论轮数 |
 | `timeout` | int | 300 | 单次 API 超时（秒） |
 | `max_tokens` | int | 6000 | 辩手单次输出 token 上限 |
+| `cross_exam` | int | `0` | 质询轮数 (0=关, 1=R1后, -1=每轮) |
+| `early_stop` | bool | `false` | 启用收敛早停 |
 | `base_url` | string | env/fallback | OpenAI 兼容 API 端点 |
 | `api_key` | string | env/fallback | API 密钥 |
 | `debaters` | list | 3 个默认辩手 | 每项含 `name` / `model` / `style`，可选 `base_url` / `api_key` |
@@ -139,6 +156,40 @@ judge:
 
 在此输入辩论议题的详细背景与讨论要点...
 ```
+
+### 质询模式 (`--cross-exam`)
+
+质询模式在指定轮次后增加质询子回合，辩手按 round-robin 顺序互相质疑：
+
+```
+R1: 并行发言 → R1.5: 串行质询 (d1→d2, d2→d3, ..., dN→d1) → R2: 逐条回应质询 → ...→ 裁判
+```
+
+- `--cross-exam` — R1 后质询（等价于 `--cross-exam 1`）
+- `--cross-exam 3` — R1、R2、R3 后均质询
+- `--cross-exam -1` — 每轮都质询（最后一轮除外）
+- 每位提问者引用 target 的发言，提出 2-3 个尖锐质疑
+- 质询后的下一轮任务自动变为"逐条回应收到的质询"
+- 质询日志标记为 `🔍`，裁判可引用质询中暴露的论证缺陷
+
+**适用场景**：争议性强的议题、需要辩手真正交锋而非各说各话的场合。
+
+在 YAML 中配置：
+
+```yaml
+cross_exam: 1    # R1 后质询
+cross_exam: -1   # 每轮都质询
+```
+
+### 收敛早停 (`--early-stop`)
+
+每轮结束后检查所有辩手发言的字符三元组 Jaccard 相似度，若两两平均相似度达到阈值 (默认 55%) 则跳过剩余轮次，直接进入裁判阶段。
+
+```yaml
+early_stop: true
+```
+
+可与 `--deep` 组合使用。
 
 ## 5. 立场生成器
 

@@ -17,7 +17,10 @@ from pathlib import Path
 import httpx
 import yaml
 
-from debate_tool.core import DEFAULT_DEBATERS, DEFAULT_JUDGE
+from debate_tool.core import (
+    DEFAULT_DEBATERS, DEFAULT_JUDGE, DEFAULT_EARLY_STOP_THRESHOLD,
+    check_convergence,
+)
 
 # ── 环境变量 ────────────────────────────────────────────
 ENV_BASE_URL = os.environ.get("DEBATE_BASE_URL", "").strip()
@@ -61,6 +64,9 @@ def parse_topic_file(path: Path) -> dict:
         # API 配置：front-matter > 环境变量
         "base_url":    front.get("base_url", "").strip(),
         "api_key":     front.get("api_key", "").strip(),
+        # Mode fields
+        "cross_exam":  int(front.get("cross_exam", 0)),
+        "early_stop":  front.get("early_stop", False),
     }
     return cfg
 
@@ -116,7 +122,7 @@ class Log:
         e = {"seq": len(self.entries)+1, "ts": datetime.now().isoformat(),
              "tag": tag, "name": name, "content": content}
         self.entries.append(e)
-        icon = {"summary": "⚖️ 裁判"}.get(tag, "💬")
+        icon = {"summary": "⚖️ 裁判", "cross_exam": "🔍"}.get(tag, "💬")
         print(f"\n{'='*60}\n[{e['seq']}] {icon} {name}\n{'='*60}")
         t = content
         print(t[:800] + "\n...(见日志)" if len(t) > 800 else t)
@@ -125,7 +131,7 @@ class Log:
     def _flush(self):
         lines = [f"# {self.title} 辩论日志\n\n> {datetime.now().isoformat()}\n\n---\n"]
         for e in self.entries:
-            label = {"summary": "⚖️ **裁判总结**"}.get(e["tag"], "")
+            label = {"summary": "⚖️ **裁判总结**", "cross_exam": "🔍 **质询**"}.get(e["tag"], "")
             hdr = f"[{e['seq']}] {label}" if label else f"[{e['seq']}] {e['name']}"
             lines.append(f"\n### {hdr}\n\n*{e['ts']}*\n\n{e['content']}\n\n---\n")
         self.path.write_text("\n".join(lines), encoding="utf-8")
@@ -148,6 +154,49 @@ class Log:
         return "\n\n".join(parts)
 
 
+# ── 质询子回合 ────────────────────────────────────────────
+
+async def run_cross_exam(debaters: list[dict], log: Log, topic: str,
+                         rnd: int,
+                         *, max_tokens: int, timeout: int,
+                         debate_base_url: str, debate_api_key: str):
+    """Round-robin cross-examination after a debate round.
+
+    Pairing: d1→d2, d2→d3, ..., dN→d1.
+    Each questioner references the target's latest speech and poses 2-3 challenges.
+    """
+    n = len(debaters)
+    # Collect latest round speeches (last N entries in log)
+    latest_entries = log.entries[-n:]
+    speech_by_name: dict[str, str] = {e["name"]: e["content"] for e in latest_entries}
+
+    for i in range(n):
+        questioner = debaters[i]
+        target = debaters[(i + 1) % n]
+        target_speech = speech_by_name.get(target["name"], "(无发言)")
+
+        q_base_url = (questioner.get("base_url", "") or debate_base_url).strip()
+        q_api_key = (questioner.get("api_key", "") or debate_api_key).strip()
+
+        sys_prompt = (
+            f"你是「{questioner['name']}」（{questioner['style']}），"
+            f"现在进入质询环节。\n\n"
+            f"请针对「{target['name']}」的第 {rnd} 轮发言提出 2-3 个尖锐质疑，"
+            f"指出其论证中的薄弱环节、遗漏或矛盾之处。"
+        )
+        user_ctx = (
+            f"## 辩论议题\n\n{topic}\n\n"
+            f"## {target['name']} 的第 {rnd} 轮发言\n\n{target_speech}"
+        )
+
+        result = await call_llm(
+            questioner["model"], sys_prompt, user_ctx,
+            max_tokens=max_tokens, timeout=timeout,
+            base_url=q_base_url, api_key=q_api_key,
+        )
+        log.add(f"{questioner['name']} → {target['name']}", result, "cross_exam")
+
+
 # ── 主流程 ────────────────────────────────────────────────
 
 async def run(cfg: dict, topic_path: Path):
@@ -162,12 +211,33 @@ async def run(cfg: dict, topic_path: Path):
     timeout = cfg["timeout"]
     max_tokens = cfg["max_tokens"]
     constraints = cfg["constraints"]
+    cross_exam = cfg.get("cross_exam", 0)   # number of rounds with cross-exam
+    early_stop = cfg.get("early_stop", False)
+    threshold = cfg.get("threshold", DEFAULT_EARLY_STOP_THRESHOLD)
     # Per-debate API config
     debate_base_url = (cfg.get("base_url", "") or ENV_BASE_URL).strip()
     debate_api_key = (cfg.get("api_key", "") or ENV_API_KEY).strip()
 
+    # cross_exam == -1 means every round (except last)
+    if cross_exam < 0:
+        cross_exam_rounds = set(range(1, rounds))  # all except final
+    else:
+        cross_exam_rounds = set(range(1, min(cross_exam, rounds) + 1))
+
     print("=" * 60)
     print(f"  {cfg['title']}")
+    flags = []
+    if cross_exam_rounds:
+        if cross_exam < 0:
+            flags.append("质询(全轮)")
+        elif cross_exam == 1:
+            flags.append("质询(R1)")
+        else:
+            flags.append(f"质询(R1~R{max(cross_exam_rounds)})")
+    if early_stop:
+        flags.append(f"早停(≥{threshold:.0%})")
+    if flags:
+        print(f"  [{', '.join(flags)}]")
     print(f"  {rounds} 轮 | 辩手: {', '.join(d['name'] for d in debaters)}")
     print(f"  裁判: {judge['name']}")
     if debate_base_url:
@@ -175,12 +245,13 @@ async def run(cfg: dict, topic_path: Path):
     print("=" * 60)
 
     last_seq = 0
+    had_cross_exam_last = False
 
     for rnd in range(1, rounds + 1):
         print(f"\n\n📢 第 {rnd}/{rounds} 轮\n")
         new_log = log.since(last_seq)
 
-        # 构建 user context
+        # ── Phase A: 并行辩手发言 ──
         if rnd == 1:
             user_ctx = f"## 辩论议题\n\n{topic}"
             task_desc = cfg["round1_task"]
@@ -191,7 +262,13 @@ async def run(cfg: dict, topic_path: Path):
             user_ctx = f"## 辩论议题\n\n{topic}\n\n## 上轮辩论内容\n\n{new_log}"
             task_desc = cfg["middle_task"]
 
-        # 构建约束段落
+        # If cross_exam happened last round, ask debaters to respond to challenges
+        if had_cross_exam_last:
+            task_desc = (
+                "逐条回应你收到的质询，指出对方质疑中的不当之处，"
+                "并可修正自己的方案。400-600 字"
+            )
+
         constraints_block = ""
         if constraints:
             constraints_block = f"\n\n核心约束：\n{constraints}"
@@ -212,6 +289,25 @@ async def run(cfg: dict, topic_path: Path):
         for d, resp in zip(debaters, results):
             log.add(d["name"], resp)
         last_seq = mark
+
+        # ── Phase B: 早停检查 ──
+        if early_stop and rnd < rounds:
+            converged, avg_sim = check_convergence(results, threshold)
+            print(f"\n  📊 收敛检查: 平均相似度 {avg_sim:.1%} (阈值 {threshold:.0%})")
+            if converged:
+                print("  ⚡ 观点已收敛，跳过剩余轮次，直接进入裁判阶段")
+                break
+
+        # ── Phase C: 质询（若当前轮在 cross_exam_rounds 中且非最后一轮） ──
+        had_cross_exam_last = False
+        if rnd in cross_exam_rounds and rnd < rounds:
+            print(f"\n\n🔍 质询环节 (R{rnd}.5)\n")
+            await run_cross_exam(
+                debaters, log, topic, rnd,
+                max_tokens=max_tokens, timeout=timeout,
+                debate_base_url=debate_base_url, debate_api_key=debate_api_key,
+            )
+            had_cross_exam_last = True
 
     # ══════════════════════════════════════════════════
     #  裁判总结
@@ -306,6 +402,17 @@ def main(argv=None):
             "  debate-tool run my_topic.md\n"
             "  debate-tool run my_topic.md --rounds 5\n"
             "  debate-tool run my_topic.md --dry-run\n"
+            "  debate-tool run my_topic.md --cross-exam\n"
+            "  debate-tool run my_topic.md --cross-exam 3\n"
+            "  debate-tool run my_topic.md --cross-exam -1\n"
+            "  debate-tool run my_topic.md --cross-exam --early-stop\n"
+            "\n"
+            "质询:\n"
+            "  --cross-exam [N]  每轮后增加质询子回合 (默认 N=1, 仅 R1 后)\n"
+            "                    N=2 → R1, R2 后均质询; N=-1 → 每轮都质询\n"
+            "\n"
+            "早停:\n"
+            "  --early-stop      启用收敛早停 (观点趋同时跳过剩余轮次)\n"
             "\n"
             "环境变量:\n"
             "  DEBATE_API_KEY    API 密钥\n"
@@ -318,6 +425,10 @@ def main(argv=None):
     ap.add_argument("topic", type=Path, help="议题 Markdown 文件（含 YAML front-matter）")
     ap.add_argument("--rounds", type=int, default=None, help="覆盖辩论轮数")
     ap.add_argument("--dry-run", action="store_true", help="仅解析配置，不调用 LLM")
+    ap.add_argument("--cross-exam", nargs="?", type=int, const=1, default=None,
+                    metavar="N", help="质询轮数 (默认 1; -1=每轮都质询)")
+    ap.add_argument("--early-stop", action="store_true", help="启用收敛早停")
+
     args = ap.parse_args(argv)
 
     # 验证文件存在
@@ -329,9 +440,23 @@ def main(argv=None):
     # 解析配置
     cfg = parse_topic_file(topic_path)
 
-    # CLI 覆盖
+    # ── CLI 覆盖 ──
+    # --cross-exam: CLI > YAML > 默认 0
+    if args.cross_exam is not None:
+        cfg["cross_exam"] = args.cross_exam
+
+    # --early-stop: CLI > YAML
+    if args.early_stop:
+        cfg["early_stop"] = True
+
+    # --rounds 总是覆盖
     if args.rounds is not None:
         cfg["rounds"] = args.rounds
+
+    # 确保默认值
+    cfg.setdefault("cross_exam", 0)
+    cfg.setdefault("early_stop", False)
+    cfg.setdefault("threshold", DEFAULT_EARLY_STOP_THRESHOLD)
 
     # 解析与校验 API 配置
     effective_url = (cfg["base_url"] or ENV_BASE_URL).strip()
@@ -347,6 +472,16 @@ def main(argv=None):
         print("=" * 60)
         print(f"\n  文件:     {topic_path}")
         print(f"  轮数:     {cfg['rounds']}")
+        cx = cfg.get("cross_exam", 0)
+        if cx < 0:
+            print(f"  质询:     每轮")
+        elif cx == 1:
+            print(f"  质询:     R1 后")
+        elif cx > 1:
+            print(f"  质询:     R1~R{cx} 后")
+        else:
+            print(f"  质询:     否")
+        print(f"  早停:     {'是 (阈值 {:.0%})'.format(cfg.get('threshold', DEFAULT_EARLY_STOP_THRESHOLD)) if cfg.get('early_stop') else '否'}")
         print(f"  超时:     {cfg['timeout']}s")
         print(f"  max_tok:  {cfg['max_tokens']}")
         print(f"\n  辩手:")

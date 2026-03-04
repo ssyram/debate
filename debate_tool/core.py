@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
 from datetime import datetime
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -52,9 +52,17 @@ DEFAULT_JUDGE_INSTRUCTIONS = (
 
 DEFAULT_CONSTRAINTS = ""
 
+# ---------------------------------------------------------------------------
+# Early-stop convergence threshold
+# ---------------------------------------------------------------------------
+
+DEFAULT_EARLY_STOP_THRESHOLD = 0.55
+
+
 # All YAML front-matter field names in order
 FIELD_ORDER = [
     "title", "rounds", "timeout", "max_tokens",
+    "cross_exam", "early_stop",
     "base_url", "api_key",
     "debaters", "judge",
     "constraints",
@@ -116,6 +124,34 @@ def detect_platform() -> str:
     elif p == "win32":
         return "windows"
     return "unknown"
+
+
+def trigram_jaccard(a: str, b: str) -> float:
+    """Character-trigram Jaccard similarity. Works for CJK and Latin text."""
+    if not a or not b:
+        return 0.0
+    # Normalise whitespace
+    a = " ".join(a.split())
+    b = " ".join(b.split())
+    if len(a) < 3 or len(b) < 3:
+        return 1.0 if a == b else 0.0
+    set_a = {a[i:i + 3] for i in range(len(a) - 2)}
+    set_b = {b[i:i + 3] for i in range(len(b) - 2)}
+    inter = len(set_a & set_b)
+    union = len(set_a | set_b)
+    return inter / union if union else 0.0
+
+
+def check_convergence(outputs: list[str], threshold: float) -> tuple[bool, float]:
+    """Check if N outputs have converged (pairwise average similarity >= threshold).
+
+    Returns (converged, avg_similarity).
+    """
+    if len(outputs) < 2:
+        return False, 0.0
+    sims = [trigram_jaccard(a, b) for a, b in combinations(outputs, 2)]
+    avg = sum(sims) / len(sims)
+    return avg >= threshold, avg
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +223,16 @@ def generate_topic_file(config: dict) -> str:
     max_tokens = config.get("max_tokens", DEFAULT_MAX_TOKENS)
     if max_tokens != DEFAULT_MAX_TOKENS:
         parts.append(f"max_tokens: {max_tokens}")
+
+    # cross_exam — emit if non-zero
+    cross_exam = config.get("cross_exam", 0)
+    if cross_exam:
+        parts.append(f"cross_exam: {cross_exam}")
+
+    # early_stop — emit if True
+    early_stop = config.get("early_stop", False)
+    if early_stop:
+        parts.append("early_stop: true")
 
     # base_url — only if set
     base_url = config.get("base_url", "").strip()

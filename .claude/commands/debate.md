@@ -16,6 +16,10 @@ Run `echo $DEBATE_TOOL_DIR` to find it. If the variable is unset, ask the user w
 
 **Important:** The CLI entry point is `python3 -m debate_tool <command>`, run from within `$DEBATE_TOOL_DIR`. Available subcommands:
 - `run <topic.md>` — run a debate from a topic file
+- `run <topic.md> --cross-exam` — add cross-examination after R1 (round-robin challenges)
+- `run <topic.md> --cross-exam 3` — cross-exam after R1, R2, and R3
+- `run <topic.md> --cross-exam -1` — cross-exam after every round (except last)
+- `run <topic.md> --early-stop` — enable convergence early-stop
 - `stance <topic.md>` — generate debater stance recommendations via LLM
 
 ### Step 3: Create the Topic File
@@ -28,6 +32,8 @@ The topic file format uses YAML front-matter between `---` delimiters, followed 
 ---
 title: "辩论标题"
 rounds: 3
+# cross_exam: 1       # 质询轮数 (0=不质询, 1=R1后, -1=每轮)
+# early_stop: true    # 启用收敛早停
 # timeout: 300
 # max_tokens: 6000
 
@@ -75,9 +81,11 @@ judge:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `title` | string | filename | 辩论标题 |
-| `rounds` | int | 3 | 辩论轮数 (1-20) |
+| `rounds` | int | 3 | 辩论轮数 |
 | `timeout` | int | 300 | API 超时秒数 |
 | `max_tokens` | int | 6000 | 辩手单次输出 token 上限 |
+| `cross_exam` | int | 0 | 质询轮数 (0=关, 1=R1后, -1=每轮) |
+| `early_stop` | bool | false | 启用收敛早停 |
 | `base_url` | string | env var | OpenAI 兼容 API 端点 |
 | `api_key` | string | env var | API key |
 | `debaters` | list | 3 defaults | 辩手配置列表 (>=2) |
@@ -117,8 +125,30 @@ Execute the debate:
 cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file>
 ```
 
+For cross-examination (recommended for complex/contentious topics):
+```bash
+# R1 后质询一轮
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam
+
+# R1~R3 后均质询
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam 3
+
+# 每轮都质询（最后一轮除外）
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam -1
+```
+
+The `--cross-exam` flag adds cross-examination rounds where each debater challenges the next in round-robin order (d1→d2, d2→d3, ..., dN→d1). The following debate round's task becomes "respond to challenges received". This significantly improves debate quality — debaters must respond to specific critiques rather than giving generic rebuttals.
+
+To enable early-stop (skip remaining rounds if debaters converge):
+```bash
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --early-stop
+```
+
 The debate will:
 - Run all debaters in parallel for each round
+- (Cross-exam) After specified rounds, run serial cross-examination
+- (Cross-exam) Next round's task becomes "respond to challenges received"
+- (Early-stop) After each round, check pairwise convergence; skip to judge if threshold met
 - After all rounds, the judge produces a structured summary
 - Output two files in the same directory as the topic file:
   - `{stem}_debate_log.md` — full debate log
