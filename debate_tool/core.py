@@ -2,8 +2,10 @@
 
 Constants, defaults, YAML generation, file I/O.
 """
+
 from __future__ import annotations
 
+import math
 import os
 import re
 from datetime import datetime
@@ -17,8 +19,8 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 DEFAULT_DEBATERS = [
-    {"name": "GPT-5.2",    "model": "gpt-5.2",          "style": "务实工程派"},
-    {"name": "Kimi-K2.5",  "model": "kimi-k2.5",        "style": "创新挑战派"},
+    {"name": "GPT-5.2", "model": "gpt-5.2", "style": "务实工程派"},
+    {"name": "Kimi-K2.5", "model": "kimi-k2.5", "style": "创新挑战派"},
     {"name": "Sonnet-4-6", "model": "claude-sonnet-4-6", "style": "严谨分析派"},
 ]
 
@@ -34,6 +36,16 @@ DEFAULT_MAX_TOKENS = 6000
 
 DEFAULT_BASE_URL = os.environ.get("DEBATE_BASE_URL", "").strip()
 DEFAULT_API_KEY = os.environ.get("DEBATE_API_KEY", "").strip()
+
+# Comma-separated model list for cycling across debaters.
+# e.g. "gpt-5.2,kimi-k2.5,MiniMax-M2.5"
+# The i-th debater gets models[i % len(models)].
+_raw_models = os.environ.get("DEFAULT_DEBATE_MODELS", "").strip()
+DEFAULT_DEBATE_MODELS: list[str] = (
+    [m.strip() for m in _raw_models.split(",") if m.strip()]
+    if _raw_models
+    else ["gpt-5.2"]
+)
 
 DEFAULT_ROUND1_TASK = "针对各议题给出立场和建议，每个 200-300 字"
 DEFAULT_MIDDLE_TASK = "回应其他辩手观点，深化立场，400-600 字"
@@ -61,12 +73,20 @@ DEFAULT_EARLY_STOP_THRESHOLD = 0.55
 
 # All YAML front-matter field names in order
 FIELD_ORDER = [
-    "title", "rounds", "timeout", "max_tokens",
-    "cross_exam", "early_stop",
-    "base_url", "api_key",
-    "debaters", "judge",
+    "title",
+    "rounds",
+    "timeout",
+    "max_tokens",
+    "cross_exam",
+    "early_stop",
+    "base_url",
+    "api_key",
+    "debaters",
+    "judge",
     "constraints",
-    "round1_task", "middle_task", "final_task",
+    "round1_task",
+    "middle_task",
+    "final_task",
     "judge_instructions",
 ]
 
@@ -104,9 +124,11 @@ def mask_key(key: str) -> str:
 def is_curses_supported() -> bool:
     """Check if curses TUI is supported on this platform."""
     import sys
+
     if sys.platform == "win32":
         try:
             import curses  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -116,6 +138,7 @@ def is_curses_supported() -> bool:
 def detect_platform() -> str:
     """Detect current OS."""
     import sys
+
     p = sys.platform
     if p.startswith("linux"):
         return "linux"
@@ -135,8 +158,8 @@ def trigram_jaccard(a: str, b: str) -> float:
     b = " ".join(b.split())
     if len(a) < 3 or len(b) < 3:
         return 1.0 if a == b else 0.0
-    set_a = {a[i:i + 3] for i in range(len(a) - 2)}
-    set_b = {b[i:i + 3] for i in range(len(b) - 2)}
+    set_a = {a[i : i + 3] for i in range(len(a) - 2)}
+    set_b = {b[i : i + 3] for i in range(len(b) - 2)}
     inter = len(set_a & set_b)
     union = len(set_a | set_b)
     return inter / union if union else 0.0
@@ -187,7 +210,7 @@ def _yaml_judge(judge: dict) -> str:
     lines = [
         f'  model: "{judge["model"]}"',
         f'  name: "{judge["name"]}"',
-        f'  max_tokens: {judge.get("max_tokens", 8000)}',
+        f"  max_tokens: {judge.get('max_tokens', 8000)}",
     ]
     judge_base_url = str(judge.get("base_url", "")).strip()
     if judge_base_url:
@@ -311,3 +334,159 @@ def get_run_command(path: Path) -> str:
 def get_dryrun_command(path: Path) -> str:
     """Return the command for a dry-run preview."""
     return f"python -m debate_tool run {path} --dry-run"
+
+
+# ---------------------------------------------------------------------------
+# Token estimation & context compaction
+# ---------------------------------------------------------------------------
+
+# Conservative CJK-heavy estimate: ~2 tokens/char for CJK, ~0.33 for ASCII
+_CJK_RANGES = re.compile(
+    r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff"
+    r"\u2e80-\u2eff\u3000-\u303f\uff00-\uffef]"
+)
+
+DEFAULT_COMPACT_TRIGGER = 0.8
+
+
+def estimate_tokens(text: str) -> int:
+    cjk_count = len(_CJK_RANGES.findall(text))
+    ascii_count = len(text) - cjk_count
+    return math.ceil(cjk_count * 2 + ascii_count * 0.33)
+
+
+def build_compact_context(
+    entries: list[dict],
+    *,
+    max_tokens: int,
+    num_debaters: int,
+    system_text: str = "",
+) -> str:
+    """Build tiered compact context from debate log entries.
+
+    Zones:
+      Hot  — recent 1-2 rounds: full text   (40-50% budget)
+      Warm — rounds 3-5 back:   truncated   (30-40% budget)
+      Cold — older rounds:      one-liner   (10-15% budget)
+      System (topic/constraints) always preserved (10-15% budget).
+
+    Returns the compacted context string.
+    """
+    if not entries:
+        return "(无辩论记录)"
+
+    system_tokens = estimate_tokens(system_text) if system_text else 0
+    available = max_tokens - system_tokens
+    if available <= 0:
+        return "(上下文预算不足)"
+
+    entries_per_round = max(num_debaters, 1)
+    total_entries = len(entries)
+    total_rounds = math.ceil(total_entries / entries_per_round)
+
+    hot_rounds = min(2, total_rounds)
+    hot_cutoff = total_entries - (hot_rounds * entries_per_round)
+    if hot_cutoff < 0:
+        hot_cutoff = 0
+
+    warm_rounds = min(3, total_rounds - hot_rounds)
+    warm_cutoff = hot_cutoff - (warm_rounds * entries_per_round)
+    if warm_cutoff < 0:
+        warm_cutoff = 0
+
+    cold_entries = entries[:warm_cutoff]
+    warm_entries = entries[warm_cutoff:hot_cutoff]
+    hot_entries = entries[hot_cutoff:]
+
+    hot_budget = int(available * 0.50)
+    warm_budget = int(available * 0.35)
+    cold_budget = available - hot_budget - warm_budget
+
+    parts: list[str] = []
+
+    if cold_entries:
+        cold_lines = []
+        chars_per_entry = max(cold_budget * 3 // max(len(cold_entries), 1), 40)
+        for e in cold_entries:
+            tag = f"[{e['tag'].upper()}] " if e.get("tag") else ""
+            first_line = e["content"].split("\n", 1)[0][:chars_per_entry]
+            cold_lines.append(f"[{e['seq']}] {tag}{e['name']}: {first_line}")
+        parts.append("### 早期轮次摘要\n" + "\n".join(cold_lines))
+
+    if warm_entries:
+        warm_lines = []
+        chars_per_entry = max(warm_budget * 3 // max(len(warm_entries), 1), 100)
+        for e in warm_entries:
+            tag = f"[{e['tag'].upper()}] " if e.get("tag") else ""
+            content = e["content"]
+            if len(content) > chars_per_entry:
+                half = chars_per_entry // 2
+                content = content[:half] + "\n...(省略)...\n" + content[-half:]
+            warm_lines.append(f"### [{e['seq']}] {tag}{e['name']}\n{content}")
+        parts.append("\n\n".join(warm_lines))
+
+    if hot_entries:
+        hot_lines = []
+        chars_per_entry = max(hot_budget * 3 // max(len(hot_entries), 1), 200)
+        for e in hot_entries:
+            tag = f"[{e['tag'].upper()}] " if e.get("tag") else ""
+            content = e["content"][:chars_per_entry]
+            if len(e["content"]) > chars_per_entry:
+                content += "...(截断)"
+            hot_lines.append(f"### [{e['seq']}] {tag}{e['name']}\n{content}")
+        parts.append("\n\n".join(hot_lines))
+
+    return "\n\n".join(parts)
+
+
+def build_full_compact(
+    entries: list[dict],
+    *,
+    max_tokens: int,
+    keep_last: int = 0,
+) -> tuple[str, list[dict]]:
+    """Compress entries uniformly — no protected zones.
+
+    Args:
+        keep_last: number of entries from the end to keep uncompressed.
+                   0 = compress everything.
+
+    Returns (compact_text, kept_entries) where kept_entries are the
+    uncompressed tail entries (empty list if keep_last=0).
+    """
+    if not entries:
+        return "(无辩论记录)", []
+
+    if keep_last > 0 and keep_last < len(entries):
+        to_compact = entries[:-keep_last]
+        kept = entries[-keep_last:]
+    elif keep_last >= len(entries):
+        return "(无需压缩)", list(entries)
+    else:
+        to_compact = entries
+        kept = []
+
+    total_chars = sum(len(e["content"]) for e in to_compact)
+    chars_budget = max_tokens * 3
+    if total_chars <= chars_budget:
+        chars_per_entry = max(chars_budget // max(len(to_compact), 1), 200)
+    else:
+        ratio = chars_budget / max(total_chars, 1)
+        chars_per_entry = max(
+            int(max(len(e["content"]) for e in to_compact) * ratio), 80
+        )
+
+    parts: list[str] = []
+    for e in to_compact:
+        tag = (
+            f"[{e['tag'].upper()}] "
+            if e.get("tag") and e["tag"] != "compact_checkpoint"
+            else ""
+        )
+        content = e["content"]
+        if len(content) > chars_per_entry:
+            half = chars_per_entry // 2
+            content = content[:half] + "\n...(压缩省略)...\n" + content[-half:]
+        parts.append(f"[{e['seq']}] {tag}{e['name']}: {content}")
+
+    return "\n\n".join(parts), kept

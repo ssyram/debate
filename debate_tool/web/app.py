@@ -1,4 +1,5 @@
 """Flask app — routes and API endpoints for the debate wizard web UI."""
+
 from __future__ import annotations
 
 import json
@@ -19,6 +20,7 @@ from debate_tool.core import (
     DEFAULT_FINAL_TASK,
     DEFAULT_JUDGE_INSTRUCTIONS,
     DEFAULT_CONSTRAINTS,
+    DEFAULT_DEBATE_MODELS,
     title_to_filename,
     generate_topic_file,
     write_topic_file,
@@ -40,6 +42,11 @@ def create_app() -> Flask:
     )
     app.config["JSON_AS_ASCII"] = False
 
+    # Register debate live blueprint
+    from debate_tool.web.live import debate_bp
+
+    app.register_blueprint(debate_bp)
+
     # ── GET / — serve the wizard page ─────────────────────────
     @app.route("/")
     def index():
@@ -56,6 +63,7 @@ def create_app() -> Flask:
             max_tokens=DEFAULT_MAX_TOKENS,
             base_url="",
             api_key="",
+            debate_models=DEFAULT_DEBATE_MODELS,
             debaters=DEFAULT_DEBATERS,
             judge=DEFAULT_JUDGE,
             constraints=DEFAULT_CONSTRAINTS,
@@ -88,19 +96,19 @@ def create_app() -> Flask:
         title = data.get("title", "").strip()
         base_url = data.get("base_url", "").strip()
         api_key = data.get("api_key", "").strip()
-        model = data.get("model", "gpt-4").strip()
-        
+        model = data.get("model", DEFAULT_DEBATE_MODELS[0]).strip()
+
         if not title:
             return jsonify(success=False, error="标题不能为空"), 400
         if not base_url:
             return jsonify(success=False, error="Base URL 不能为空"), 400
         if not api_key:
             return jsonify(success=False, error="API Key 不能为空"), 400
-        
+
         try:
             import asyncio
             import httpx
-            
+
             system_prompt = """你是一个辩论策划专家。根据给定的辩论标题，生成一份详细的辩题说明。
 
 辩题说明应包括：
@@ -110,9 +118,9 @@ def create_app() -> Flask:
 4. 讨论范围：本次辩论聚焦的方面，以及不讨论的方面
 
 请用清晰、客观的语言撰写，长度在300-500字之间。"""
-            
+
             user_prompt = f"辩论标题：{title}\\n\\n请生成详细的辩题说明。"
-            
+
             payload = {
                 "model": model,
                 "messages": [
@@ -122,44 +130,48 @@ def create_app() -> Flask:
                 "temperature": 0.7,
                 "max_tokens": 2000,
             }
-            
+
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             }
-            
+
             async def make_request():
                 max_retries = 5  # 增加到 5 次重试
                 retry_delay = 3  # 增加初始延迟到 3 秒
-                
+
                 for attempt in range(max_retries):
                     print(f"[generate-topic] 发送请求到: {base_url}")
                     print(f"[generate-topic] 使用模型: {model}")
                     async with httpx.AsyncClient(timeout=60) as client:
                         resp = await client.post(
-                            base_url.rstrip('/'),
+                            base_url.rstrip("/"),
                             json=payload,
                             headers=headers,
                         )
-                        
+
                         print(f"[generate-topic] 响应状态码: {resp.status_code}")
-                        
+
                         if resp.status_code == 503:
                             if attempt < max_retries - 1:
-                                print(f"[generate-topic] 503 错误，{retry_delay}秒后重试 (尝试 {attempt + 1}/{max_retries})...")
+                                print(
+                                    f"[generate-topic] 503 错误，{retry_delay}秒后重试 (尝试 {attempt + 1}/{max_retries})..."
+                                )
                                 print(f"[generate-topic] 响应内容: {resp.text[:500]}")
                                 await asyncio.sleep(retry_delay)
                                 retry_delay *= 2
                                 continue
                             else:
-                                raise Exception(f"API 返回 503 (服务暂时不可用，已重试 {max_retries} 次)。响应: {resp.text[:500]}")
-                        
+                                raise Exception(
+                                    f"API 返回 503 (服务暂时不可用，已重试 {max_retries} 次)。响应: {resp.text[:500]}"
+                                )
+
                         resp.raise_for_status()
                         return resp.json()
-            
+
             result = asyncio.run(make_request())
             topic_body = result["choices"][0]["message"]["content"]
-            
+
             return jsonify(
                 success=True,
                 topic_body=topic_body,
@@ -174,13 +186,13 @@ def create_app() -> Flask:
         data = request.get_json(silent=True) or {}
         base_url = data.get("base_url", "").strip()
         api_key = data.get("api_key", "").strip()
-        model = data.get("model", "gpt-4").strip()
-        
+        model = data.get("model", DEFAULT_DEBATE_MODELS[0]).strip()
+
         if not base_url:
             return jsonify(success=False, error="Base URL 不能为空")
         if not api_key:
             return jsonify(success=False, error="API Key 不能为空")
-        
+
         try:
             result = generate_stances_sync(
                 "测试议题：人工智能是否会取代人类？",
@@ -191,7 +203,7 @@ def create_app() -> Flask:
                 user_prompt="快速测试",
                 timeout=30,
             )
-            
+
             if result.debaters:
                 return jsonify(
                     success=True,
@@ -201,10 +213,14 @@ def create_app() -> Flask:
                         "first_debater": {
                             "name": result.debaters[0].name,
                             "model": result.debaters[0].model,
-                            "style": result.debaters[0].style[:100] + "..." if len(result.debaters[0].style) > 100 else result.debaters[0].style
+                            "style": result.debaters[0].style[:100] + "..."
+                            if len(result.debaters[0].style) > 100
+                            else result.debaters[0].style,
                         },
-                        "reasoning": result.reasoning[:200] + "..." if len(result.reasoning) > 200 else result.reasoning
-                    }
+                        "reasoning": result.reasoning[:200] + "..."
+                        if len(result.reasoning) > 200
+                        else result.reasoning,
+                    },
                 )
             else:
                 return jsonify(success=False, error=result.reasoning or "API 返回为空")
@@ -224,11 +240,11 @@ def create_app() -> Flask:
             topic_body,
             base_url=data.get("base_url", ""),
             api_key=data.get("api_key", ""),
-            model=data.get("model", "gpt-4"),
+            model=data.get("model", DEFAULT_DEBATE_MODELS[0]),
             num_debaters=data.get("num_debaters", 3),
             user_prompt=data.get("user_prompt", ""),
         )
-        
+
         return jsonify(
             debaters=[
                 {"name": d.name, "model": d.model, "style": d.style}
@@ -236,7 +252,7 @@ def create_app() -> Flask:
             ],
             topic_angles=result.topic_angles,
             reasoning=result.reasoning,
-            raw_response=result.raw_response if hasattr(result, 'raw_response') else "",
+            raw_response=result.raw_response if hasattr(result, "raw_response") else "",
         )
 
     # ── POST /api/check-stances — heuristic warnings ──────────
@@ -296,6 +312,8 @@ def _extract_config(data: dict[str, Any]) -> dict[str, Any]:
         "round1_task": data.get("round1_task", DEFAULT_ROUND1_TASK),
         "middle_task": data.get("middle_task", DEFAULT_MIDDLE_TASK),
         "final_task": data.get("final_task", DEFAULT_FINAL_TASK),
-        "judge_instructions": data.get("judge_instructions", DEFAULT_JUDGE_INSTRUCTIONS),
+        "judge_instructions": data.get(
+            "judge_instructions", DEFAULT_JUDGE_INSTRUCTIONS
+        ),
         "topic_body": data.get("topic_body", ""),
     }
