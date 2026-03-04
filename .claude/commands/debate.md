@@ -31,10 +31,10 @@ The topic file format uses YAML front-matter between `---` delimiters, followed 
 
 ```markdown
 ---
-title: "辩论标题"
+title: "Debate Title"
 rounds: 3
-# cross_exam: 1       # 质询轮数 (0=不质询, 1=R1后, -1=每轮)
-# early_stop: true    # 收敛早停 (true=默认阈值55%, 或指定0~1浮点数如 0.6)
+# cross_exam: 1       # cross-examination rounds (0=disabled, 1=after R1, -1=after every round)
+# early_stop: true    # convergence early-stop (true=default threshold 55%, or custom 0~1 float like 0.6)
 # timeout: 300
 # max_tokens: 6000
 
@@ -45,67 +45,69 @@ rounds: 3
 debaters:
   - name: "GPT-5.2"
     model: "gpt-5.2"
-    style: "务实工程派"
+    style: "Pragmatic engineering approach"
     # base_url: "override per debater"
     # api_key: "override per debater"
   - name: "Kimi-K2.5"
     model: "kimi-k2.5"
-    style: "创新挑战派"
+    style: "Innovation challenger"
   - name: "Sonnet-4-6"
     model: "claude-sonnet-4-6"
-    style: "严谨分析派"
+    style: "Rigorous analytical approach"
 
 judge:
   model: "claude-opus-4-6"
-  name: "Opus-4-6 (裁判)"
+  name: "Opus-4-6 (Judge)"
   max_tokens: 8000
 
 # constraints: |
-#   - 额外规则，注入每个辩手的 system prompt
+#   - Additional rules injected into each debater's system prompt
 # round1_task: |
-#   针对各议题给出立场和建议，每个 200-300 字
+#   Provide stance and recommendations on the debate topic, 200-300 words each
 # middle_task: |
-#   回应其他辩手观点，深化立场，400-600 字
+#   Respond to other debaters' points, deepen your stance, 400-600 words
 # final_task: |
-#   最终轮，给出最终建议，标注优先级，300-500 字
+#   Final round: provide final recommendations with priority marking, 300-500 words
 # judge_instructions: |
-#   输出结构化 Summary...
+#   Output structured summary with key rulings, debater performance, and action items...
+# NOTE: English shown here; adapt language as needed for your topic and audience, styles or so.
 ---
 
-# 辩论正文
+# Debate Body
 
-在此写入辩论背景、议题、关键数据等。
+Insert debate background, topic statement, key data, and context here.
 ```
 
 #### Field Reference
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `title` | string | filename | 辩论标题 |
-| `rounds` | int | 3 | 辩论轮数 |
-| `timeout` | int | 300 | API 超时秒数 |
-| `max_tokens` | int | 6000 | 辩手单次输出 token 上限 |
-| `cross_exam` | int | 0 | 质询轮数 (0=关, 1=R1后, -1=每轮) |
-| `early_stop` | bool/float | false | 收敛早停: `true`=默认阈值55%, 或 0~1 浮点数 |
-| `base_url` | string | env var | OpenAI 兼容 API 端点 |
+| `title` | string | filename | Debate title |
+| `rounds` | int | 3 | Number of debate rounds |
+| `timeout` | int | 300 | API timeout in seconds |
+| `max_tokens` | int | 6000 | Max tokens per debater response |
+| `cross_exam` | int | 0 | Cross-examination rounds (0=disabled, 1=after R1, -1=after every round) |
+| `early_stop` | bool/float | false | Convergence early-stop: `true`=default 55% threshold, or custom 0~1 float |
+| `base_url` | string | env var | OpenAI-compatible API endpoint |
 | `api_key` | string | env var | API key |
-| `debaters` | list | 3 defaults | 辩手配置列表 (>=2) |
-| `judge` | object | opus-4-6 | 裁判配置 |
-| `constraints` | string | "" | 额外规则 |
-| `round1_task` | string | (built-in) | 第一轮任务指令 |
-| `middle_task` | string | (built-in) | 中间轮任务指令 |
-| `final_task` | string | (built-in) | 最终轮任务指令 |
-| `judge_instructions` | string | (built-in) | 裁判评判标准 |
+| `debaters` | list | 3 defaults | Debater configurations (>=2 required) |
+| `judge` | object | opus-4-6 | Judge configuration |
+| `constraints` | string | "" | Additional rules injected into system prompts |
+| `round1_task` | string | (built-in) | Round 1 task instructions |
+| `middle_task` | string | (built-in) | Middle rounds task instructions |
+| `final_task` | string | (built-in) | Final round task instructions |
+| `judge_instructions` | string | (built-in) | Judge evaluation criteria |
 
-Each debater needs: `name` (display name), `model` (model ID), `style` (stance description). Optionally override `base_url`/`api_key` per debater.
+Each debater requires: `name` (display name), `model` (model ID), `style` (stance description). Optionally override `base_url`/`api_key` per debater.
 
 #### Style Tips
 
-Debaters should have contrasting or complementary stances to create productive tension:
-- **通用型**: 务实工程派 / 创新挑战派 / 严谨分析派
-- **权衡型**: 精简派 / 覆盖派 / 平衡派
-- **审查型**: 严格审查派 / 支持验证派 / 中立分析派
-- **自定义**: "红队攻击手：目标是找到所有漏洞..."
+Design debaters with contrasting or complementary stances to create productive debate tension:
+- **General approach**: Pragmatic engineering / Innovation challenger / Rigorous analysis
+- **Trade-off focused**: Minimalist / Comprehensive / Balanced
+- **Scrutiny-focused**: Strict review / Verification support / Neutral analysis
+- **Custom**: "Red team attacker: goal is to find all vulnerabilities..."
+
 
 ### Step 4: Confirm with User
 
@@ -128,13 +130,13 @@ cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file>
 
 For cross-examination (recommended for complex/contentious topics):
 ```bash
-# R1 后质询一轮
+# Cross-exam after R1
 cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam
 
-# R1~R3 后均质询
+# Cross-exam after R1, R2, and R3
 cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam 3
 
-# 每轮都质询（最后一轮除外）
+# Cross-exam after every round (except last)
 cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam -1
 ```
 
@@ -170,6 +172,6 @@ After the debate completes, read and present the summary file to the user. Highl
 - API credentials: per-debater > topic-level > env vars (`DEBATE_BASE_URL`, `DEBATE_API_KEY`).
 - At least 2 debaters are required.
 - If the user specifies models, styles, or rounds explicitly, respect their choices. Otherwise, use sensible defaults based on the topic.
-- Use Chinese for the topic file content unless the user requests otherwise.
+- Language: Use the language used in the current chat with user. The example YAML is in English, but adapt as needed.
 - **Always use `python3`** (not `python`) to avoid hitting Python 2.7 on some systems.
 - The stance generator can be invoked via: `cd $DEBATE_TOOL_DIR && python3 -m debate_tool stance <topic_file> --num 5`
