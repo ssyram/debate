@@ -60,7 +60,7 @@ def create_app() -> Flask:
             output_path="",
             rounds=DEFAULT_ROUNDS,
             timeout=DEFAULT_TIMEOUT,
-            max_tokens=DEFAULT_MAX_TOKENS,
+            max_reply_tokens=DEFAULT_MAX_TOKENS,
             base_url="",
             api_key="",
             debate_models=DEFAULT_DEBATE_MODELS,
@@ -128,7 +128,7 @@ def create_app() -> Flask:
                     {"role": "user", "content": user_prompt},
                 ],
                 "temperature": 0.7,
-                "max_tokens": 2000,
+                "max_reply_tokens": 2000,
             }
 
             headers = {
@@ -303,7 +303,7 @@ def _extract_config(data: dict[str, Any]) -> dict[str, Any]:
         "title": data.get("title", ""),
         "rounds": int(data.get("rounds", DEFAULT_ROUNDS)),
         "timeout": int(data.get("timeout", DEFAULT_TIMEOUT)),
-        "max_tokens": int(data.get("max_tokens", DEFAULT_MAX_TOKENS)),
+        "max_reply_tokens": int(data.get("max_reply_tokens", data.get("max_tokens", DEFAULT_MAX_TOKENS))),
         "base_url": data.get("base_url", ""),
         "api_key": data.get("api_key", ""),
         "debaters": data.get("debaters", DEFAULT_DEBATERS),
