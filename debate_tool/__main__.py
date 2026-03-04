@@ -16,6 +16,7 @@
     debate-tool run my_topic.md --cross-exam 3
     debate-tool run my_topic.md --cross-exam -1
     debate-tool run my_topic.md --cross-exam --early-stop
+    debate-tool run my_topic.md --early-stop 0.6
     debate-tool build
     debate-tool build --cli
     debate-tool stance my_topic.md --num 5

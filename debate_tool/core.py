@@ -229,10 +229,13 @@ def generate_topic_file(config: dict) -> str:
     if cross_exam:
         parts.append(f"cross_exam: {cross_exam}")
 
-    # early_stop — emit if True
-    early_stop = config.get("early_stop", False)
+    # early_stop — emit if non-zero
+    early_stop = config.get("early_stop", 0.0)
     if early_stop:
-        parts.append("early_stop: true")
+        if early_stop == DEFAULT_EARLY_STOP_THRESHOLD:
+            parts.append("early_stop: true")
+        else:
+            parts.append(f"early_stop: {early_stop}")
 
     # base_url — only if set
     base_url = config.get("base_url", "").strip()

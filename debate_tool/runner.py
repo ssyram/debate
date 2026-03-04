@@ -29,6 +29,18 @@ ENV_API_KEY = os.environ.get("DEBATE_API_KEY", "").strip()
 
 # ── YAML Front-matter 解析 ───────────────────────────────
 
+def _parse_early_stop(val) -> float:
+    """Parse early_stop: False → 0, True → default threshold, float → that value."""
+    if val is False or val is None or val == 0:
+        return 0.0
+    if val is True:
+        return DEFAULT_EARLY_STOP_THRESHOLD
+    f = float(val)
+    if not (0 < f < 1):
+        raise ValueError(f"early_stop must be true or a float in (0,1), got {val!r}")
+    return f
+
+
 def parse_topic_file(path: Path) -> dict:
     """解析 Markdown 文件的 YAML front-matter + body。"""
     text = path.read_text(encoding="utf-8")
@@ -66,7 +78,7 @@ def parse_topic_file(path: Path) -> dict:
         "api_key":     front.get("api_key", "").strip(),
         # Mode fields
         "cross_exam":  int(front.get("cross_exam", 0)),
-        "early_stop":  front.get("early_stop", False),
+        "early_stop":  _parse_early_stop(front.get("early_stop", False)),
     }
     return cfg
 
@@ -212,8 +224,7 @@ async def run(cfg: dict, topic_path: Path):
     max_tokens = cfg["max_tokens"]
     constraints = cfg["constraints"]
     cross_exam = cfg.get("cross_exam", 0)   # number of rounds with cross-exam
-    early_stop = cfg.get("early_stop", False)
-    threshold = cfg.get("threshold", DEFAULT_EARLY_STOP_THRESHOLD)
+    early_stop = cfg.get("early_stop", 0.0)  # 0=off, (0,1)=threshold
     # Per-debate API config
     debate_base_url = (cfg.get("base_url", "") or ENV_BASE_URL).strip()
     debate_api_key = (cfg.get("api_key", "") or ENV_API_KEY).strip()
@@ -235,7 +246,7 @@ async def run(cfg: dict, topic_path: Path):
         else:
             flags.append(f"质询(R1~R{max(cross_exam_rounds)})")
     if early_stop:
-        flags.append(f"早停(≥{threshold:.0%})")
+        flags.append(f"早停(≥{early_stop:.0%})")
     if flags:
         print(f"  [{', '.join(flags)}]")
     print(f"  {rounds} 轮 | 辩手: {', '.join(d['name'] for d in debaters)}")
@@ -292,8 +303,8 @@ async def run(cfg: dict, topic_path: Path):
 
         # ── Phase B: 早停检查 ──
         if early_stop and rnd < rounds:
-            converged, avg_sim = check_convergence(results, threshold)
-            print(f"\n  📊 收敛检查: 平均相似度 {avg_sim:.1%} (阈值 {threshold:.0%})")
+            converged, avg_sim = check_convergence(results, early_stop)
+            print(f"\n  📊 收敛检查: 平均相似度 {avg_sim:.1%} (阈值 {early_stop:.0%})")
             if converged:
                 print("  ⚡ 观点已收敛，跳过剩余轮次，直接进入裁判阶段")
                 break
@@ -427,7 +438,8 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true", help="仅解析配置，不调用 LLM")
     ap.add_argument("--cross-exam", nargs="?", type=int, const=1, default=None,
                     metavar="N", help="质询轮数 (默认 1; -1=每轮都质询)")
-    ap.add_argument("--early-stop", action="store_true", help="启用收敛早停")
+    ap.add_argument("--early-stop", nargs="?", type=float, const=DEFAULT_EARLY_STOP_THRESHOLD,
+                    default=None, metavar="T", help="启用收敛早停 (默认阈值 0.55; 可指定 0~1 之间的值)")
 
     args = ap.parse_args(argv)
 
@@ -446,8 +458,8 @@ def main(argv=None):
         cfg["cross_exam"] = args.cross_exam
 
     # --early-stop: CLI > YAML
-    if args.early_stop:
-        cfg["early_stop"] = True
+    if args.early_stop is not None:
+        cfg["early_stop"] = args.early_stop
 
     # --rounds 总是覆盖
     if args.rounds is not None:
@@ -455,8 +467,7 @@ def main(argv=None):
 
     # 确保默认值
     cfg.setdefault("cross_exam", 0)
-    cfg.setdefault("early_stop", False)
-    cfg.setdefault("threshold", DEFAULT_EARLY_STOP_THRESHOLD)
+    cfg.setdefault("early_stop", 0.0)
 
     # 解析与校验 API 配置
     effective_url = (cfg["base_url"] or ENV_BASE_URL).strip()
@@ -481,7 +492,7 @@ def main(argv=None):
             print(f"  质询:     R1~R{cx} 后")
         else:
             print(f"  质询:     否")
-        print(f"  早停:     {'是 (阈值 {:.0%})'.format(cfg.get('threshold', DEFAULT_EARLY_STOP_THRESHOLD)) if cfg.get('early_stop') else '否'}")
+        print(f"  早停:     {'是 (阈值 {:.0%})'.format(cfg.get('early_stop', 0.0)) if cfg.get('early_stop') else '否'}")
         print(f"  超时:     {cfg['timeout']}s")
         print(f"  max_tok:  {cfg['max_tokens']}")
         print(f"\n  辩手:")
