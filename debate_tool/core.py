@@ -76,7 +76,7 @@ FIELD_ORDER = [
     "title",
     "rounds",
     "timeout",
-    "max_tokens",
+    "max_reply_tokens",
     "cross_exam",
     "early_stop",
     "base_url",
@@ -243,9 +243,9 @@ def generate_topic_file(config: dict) -> str:
         parts.append(f"timeout: {timeout}")
 
     # max_tokens — emit if non-default
-    max_tokens = config.get("max_tokens", DEFAULT_MAX_TOKENS)
-    if max_tokens != DEFAULT_MAX_TOKENS:
-        parts.append(f"max_tokens: {max_tokens}")
+    max_reply_tokens = config.get("max_reply_tokens", DEFAULT_MAX_TOKENS)
+    if max_reply_tokens != DEFAULT_MAX_TOKENS:
+        parts.append(f"max_reply_tokens: {max_reply_tokens}")
 
     # cross_exam — emit if non-zero
     cross_exam = config.get("cross_exam", 0)
@@ -358,7 +358,7 @@ def estimate_tokens(text: str) -> int:
 def build_compact_context(
     entries: list[dict],
     *,
-    max_tokens: int,
+    token_budget: int,
     num_debaters: int,
     system_text: str = "",
 ) -> str:
@@ -376,7 +376,7 @@ def build_compact_context(
         return "(无辩论记录)"
 
     system_tokens = estimate_tokens(system_text) if system_text else 0
-    available = max_tokens - system_tokens
+    available = token_budget - system_tokens
     if available <= 0:
         return "(上下文预算不足)"
 
@@ -442,7 +442,7 @@ def build_compact_context(
 def build_full_compact(
     entries: list[dict],
     *,
-    max_tokens: int,
+    token_budget: int,
     keep_last: int = 0,
 ) -> tuple[str, list[dict]]:
     """Compress entries uniformly — no protected zones.
@@ -467,7 +467,7 @@ def build_full_compact(
         kept = []
 
     total_chars = sum(len(e["content"]) for e in to_compact)
-    chars_budget = max_tokens * 3
+    chars_budget = token_budget * 3
     if total_chars <= chars_budget:
         chars_per_entry = max(chars_budget // max(len(to_compact), 1), 200)
     else:
