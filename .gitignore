@@ -21,19 +21,8 @@ env/
 .env.local
 .env.*.local
 
-# Debate output files (generated at runtime)
-*_debate_log.md
-*_debate_summary.md
-
-# Ignore all markdown files except README.md
-*.md
-!README.md
-!template.md
-!v2_mechanism_roadmap.md
-!.claude/**/*.md
-
-# Local manual integration tests (sensitive)
-local_test/
+# Local workspace artifacts
+.local/
 
 # Editor / OS
 .DS_Store
