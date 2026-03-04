@@ -85,6 +85,52 @@ debate-tool run my_topic.md --early-stop 0.6
 debate-tool run my_topic.md --cross-exam --early-stop
 ```
 
+### 续跑与压缩
+
+```bash
+# 续跑 1 轮（追加到同一日志）
+debate-tool resume my_topic.md
+
+# 续跑 2 轮 + 注入观察者意见
+debate-tool resume my_topic.md --rounds 2 --message "请重点讨论安全性"
+
+# 续跑时启用质询
+debate-tool resume my_topic.md --rounds 1 --cross-exam
+
+# 续跑后不执行裁判总结
+debate-tool resume my_topic.md --no-judge
+
+# 手动压缩日志（全部压缩，生成 checkpoint）
+debate-tool compact my_topic_debate_log.md --compress ALL
+
+# 保留最后 2 条，其余压缩
+debate-tool compact my_topic_debate_log.md --compress -2
+
+# 从后往前压缩最多 5 条
+debate-tool compact my_topic_debate_log.md --compress 5
+```
+
+### 修改配置
+
+```bash
+# 修改辩手模型
+debate-tool modify my_topic.md --set debater.甲.model=gpt-5
+
+# 修改全局字段
+debate-tool modify my_topic.md --set rounds=4 --set max_reply_tokens=2000
+
+# 添加辩手
+debate-tool modify my_topic.md --add "新辩手|gpt-4o-mini|批判派风格"
+
+# 移除辩手（--force 跳过 log 一致性警告）
+debate-tool modify my_topic.md --drop 旧辩手 --force
+
+# 扬弃立场（修改辩手 style，历史发言不变）
+debate-tool modify my_topic.md --pivot "甲|全新立场描述" --reason "第二阶段讨论转向"
+```
+
+> 所有 `resume` / `compact` / `modify` 操作均追加到同一 `*_debate_log.md`，原始历史完整保留。
+
 ### 生成辩手立场
 
 ```bash
@@ -133,13 +179,13 @@ export DEFAULT_DEBATE_MODELS="gpt-5.2,kimi-k2.5,MiniMax-M2.5"
 | `title` | string | 文件名 | 辩论标题 |
 | `rounds` | int | 3 | 辩论轮数 |
 | `timeout` | int | 300 | 单次 API 超时（秒） |
-| `max_tokens` | int | 6000 | 辩手单次输出 token 上限 |
+| `max_reply_tokens` | int | 6000 | 辩手单次回复最多输出的 token 数（控制输出长度，与上下文窗口无关） |
 | `cross_exam` | int | `0` | 质询轮数 (0=关, 1=R1后, -1=每轮) |
 | `early_stop` | bool/float | `false` | 收敛早停: `true` 用默认阈值 55%, 或指定 0~1 的浮点数 |
 | `base_url` | string | env/fallback | OpenAI 兼容 API 端点 |
 | `api_key` | string | env/fallback | API 密钥 |
 | `debaters` | list | 3 个默认辩手 | 每项含 `name` / `model` / `style`，可选 `base_url` / `api_key` |
-| `judge` | object | claude-opus-4-6 | 含 `model` / `name` / `max_tokens`，可选 `base_url` / `api_key` |
+| `judge` | object | claude-opus-4-6 | 含 `model` / `name` / `max_tokens`（裁判输出上限），可选 `base_url` / `api_key` |
 | `constraints` | string | `""` | 约束条件，注入每位辩手的 system prompt |
 | `round1_task` | string | 内置默认 | 第一轮任务说明 |
 | `middle_task` | string | 内置默认 | 中间轮任务说明 |

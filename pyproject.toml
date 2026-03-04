@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "debate-tool"
-version = "0.1.0"
+version = "2.4.0"
 description = "多模型辩论框架 — 多辩手并行辩论 + 裁判裁决"
 requires-python = ">=3.11"
 license = "MIT"
