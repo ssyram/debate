@@ -256,9 +256,9 @@ def write_topic_file(path: Path, content: str) -> None:
 
 def get_run_command(path: Path) -> str:
     """Return the command to run a debate with the given topic file."""
-    return f"python debate.py {path}"
+    return f"python -m debate_tool run {path}"
 
 
 def get_dryrun_command(path: Path) -> str:
     """Return the command for a dry-run preview."""
-    return f"python debate.py {path} --dry-run"
+    return f"python -m debate_tool run {path} --dry-run"

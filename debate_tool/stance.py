@@ -365,7 +365,7 @@ def _read_topic_body(path: Path) -> str:
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
-def main() -> None:
+def main(argv=None) -> None:
     """CLI: python -m debate_tool.stance topic.md [--model MODEL] [--num N] [--prompt TEXT] [--format json|yaml]"""
     parser = argparse.ArgumentParser(
         description="LLM-powered debate stance / debater-configuration generator",
@@ -409,7 +409,7 @@ def main() -> None:
         help="API key (default: env DEBATE_API_KEY)",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not args.topic.exists():
         print(f"[stance] ERROR: file not found: {args.topic}", file=sys.stderr)

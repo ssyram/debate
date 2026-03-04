@@ -28,7 +28,9 @@ env/
 # Ignore all markdown files except README.md
 *.md
 !README.md
-!template.d
+!template.md
+!v2_mechanism_roadmap.md
+!.claude/**/*.md
 
 # Local manual integration tests (sensitive)
 local_test/

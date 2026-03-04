@@ -1,0 +1,4 @@
+# debate-tool 核心依赖 — 运行辩论引擎所需的最小依赖集
+# 用法: pip install -r requirements/core.txt
+httpx
+pyyaml
