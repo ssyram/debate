@@ -63,6 +63,14 @@ def _parse_cot(val) -> int | None:
     return int(val)
 
 
+def _expand_env(value: str) -> str:
+    import re as _re_env
+    def _replace(m: "_re_env.Match") -> str:
+        var = m.group(1) or m.group(2) or ""
+        return os.environ.get(var, m.group(0) or "") or ""
+    return _re_env.sub(r"\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)", _replace, value)
+
+
 def parse_topic_file(path: Path) -> dict:
     """解析 Markdown 文件的 YAML front-matter + body。"""
     text = path.read_text(encoding="utf-8")
@@ -99,9 +107,9 @@ def parse_topic_file(path: Path) -> dict:
         ).strip(),
         "judge_instructions": front.get("judge_instructions", "").strip(),
         "topic_body": body,
-        # API 配置：front-matter > 环境变量
-        "base_url": front.get("base_url", "").strip(),
-        "api_key": front.get("api_key", "").strip(),
+        # API 配置：front-matter > 环境变量（支持 ${VAR} 占位符展开）
+        "base_url": _expand_env(front.get("base_url", "").strip()),
+        "api_key": _expand_env(front.get("api_key", "").strip()),
         # Mode fields
         "cross_exam": int(front.get("cross_exam", 0)),
         "early_stop": _parse_early_stop(front.get("early_stop", False)),
