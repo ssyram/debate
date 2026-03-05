@@ -45,7 +45,7 @@ def create_app() -> Flask:
     # Register debate live blueprint
     from debate_tool.web.live import debate_bp
 
-    app.register_blueprint(debate_bp)
+    app.register_blueprint(debate_bp, url_prefix="/live")
 
     # ── GET / — serve the dashboard page ─────────────────────────
     @app.route("/")
