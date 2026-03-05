@@ -48,7 +48,15 @@ def _handle_resume(argv):
     parser.add_argument(
         "--rounds", "-r", type=int, default=1, help="追加辩论轮数 (默认 1)"
     )
-    parser.add_argument("--cross-exam", action="store_true", help="续跑轮次间启用质询")
+    parser.add_argument(
+        "--cross-exam",
+        nargs="?",
+        const=1,
+        type=int,
+        default=0,
+        metavar="N",
+        help="续跑轮次间启用质询：省略值=每轮后质询，-1=每轮，N=前N轮后质询",
+    )
     parser.add_argument("--guide", type=str, default="", help="辩手引导提示")
     parser.add_argument("--no-judge", action="store_true", help="续跑后不执行裁判总结")
     parser.add_argument(

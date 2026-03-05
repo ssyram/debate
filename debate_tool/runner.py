@@ -758,7 +758,7 @@ async def resume(
     *,
     message: str = "",
     extra_rounds: int = 1,
-    cross_exam: bool = False,
+    cross_exam: int = 0,
     guide_prompt: str = "",
     judge_at_end: bool = True,
     force: bool = False,
@@ -937,7 +937,12 @@ async def resume(
                 log.add(d["name"], thinking, "thinking")
             log.add(d["name"], reply)
 
-        if cross_exam and r_offset < extra_rounds:
+        do_cross_exam = (
+            cross_exam != 0
+            and (cross_exam < 0 or r_offset <= cross_exam)
+            and r_offset < extra_rounds
+        )
+        if do_cross_exam:
             print(f"\n\n🔍 质询环节 (续跑 R{rnd}.5)\n")
             await run_cross_exam(
                 debaters,
@@ -1143,14 +1148,26 @@ def modify_topic(
         elif parts_key[0] == "debater" and len(parts_key) >= 3:
             target_name = parts_key[1]
             attr = parts_key[2]
-            for d in fm.get("debaters", []):
-                if d.get("name") == target_name:
-                    old = d.get(attr, "")
-                    d[attr] = val
-                    changes.append(
-                        f"set debater.{target_name}.{attr}: {old!r} → {val!r}"
-                    )
-                    break
+            debaters_list = fm.get("debaters", [])
+            matched = next(
+                (d for d in debaters_list if d.get("name") == target_name), None
+            )
+            if matched is None:
+                matched = next(
+                    (d for d in debaters_list if d.get("name", "").startswith(target_name)),
+                    None,
+                )
+            if matched is None:
+                matched = next(
+                    (d for d in debaters_list if target_name in d.get("name", "")),
+                    None,
+                )
+            if matched is not None:
+                old = matched.get(attr, "")
+                matched[attr] = val
+                changes.append(
+                    f"set debater.{matched['name']}.{attr}: {old!r} → {val!r}"
+                )
             else:
                 print(f"⚠️ 未找到辩手 {target_name}", file=sys.stderr)
         else:
