@@ -12,7 +12,7 @@
 #    6. 全轮质询:    debate-tool run my_topic.md --cross-exam -1
 #    7. 收敛早停:    debate-tool run my_topic.md --early-stop
 #
-#  或使用交互式向导:  debate-tool build
+#  或使用 Web UI 向导:  python -m debate_tool live
 #  向导支持 AI 立场推荐 (可选), 自动生成辩手配置。
 # ═══════════════════════════════════════════════════════════════
 

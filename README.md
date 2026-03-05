@@ -2,9 +2,9 @@
 
 多模型辩论框架，支持 N(>= 2) 个辩手并行多轮辩论，最终由裁判模型给出裁决。
 
-提供两种使用界面：
-- **Web 向导** — 响应式单页应用，实时预览，一键提交生成
-- **命令行 TUI 向导** — 双栏 Curses 界面，14 步生成辩论配置文件
+提供 Web UI 和命令行两种使用方式：
+- **Web UI** — 统一单页应用，内含辩论配置向导 + 实时查看器，支持从界面创建并启动辩论
+- **命令行** — `debate-tool run/resume/compact/modify` 直接驱动辩论引擎
 
 ## 1. 安装
 
@@ -15,16 +15,9 @@
 ```bash
 git clone <repo-url>
 cd debate-tool
-pip install ".[all]"       # 全量安装所有功能
-```
-
-按需安装：
-
-```bash
-pip install .              # 仅核心（httpx, pyyaml）→ 可运行辩论
-pip install ".[cli]"       # 核心 + CLI（rich, click）→ TUI 向导
-pip install ".[web]"       # 核心 + Web（flask）→ Web 向导
-pip install ".[all]"       # 全部功能
+pip install ".[web]"       # Web UI + 辩论引擎（推荐）
+pip install .              # 仅核心（httpx, pyyaml）→ 仅命令行运行辩论
+pip install ".[all]"       # 同 [web]
 ```
 
 ### 安装脚本（替代方式）
@@ -36,25 +29,36 @@ python install.py --skill  # 安装 Claude Code /debate 命令
 python install.py --env    # 设置 DEBATE_TOOL_DIR 环境变量
 ```
 
-> **Windows 用户**：TUI 向导依赖 `curses`（macOS/Linux 内置）。Windows 上需额外安装 `windows-curses`，`install.py` 会自动处理。若 TUI 不可用，可使用 Web 向导作为替代。
-
 ## 2. 快速开始
 
-### 生成辩论配置
+### Web UI（推荐）
 
 ```bash
-# Web 向导（推荐，默认）
-debate-tool build
+# 启动 Web UI，打开浏览器自动配置并启动辩论
+python -m debate_tool live
 
-# TUI 向导
-debate-tool build --cli
+# 或使用 debate-tool 命令（安装后）
+debate-tool live
+```
 
-# 也可直接用模板
+Web UI 提供统一的单页应用，包含：
+- 辩论配置向导（创建新辩论）
+- 实时辩论查看器（监控进度）
+- 一键启动辩论
+
+> **架构说明**: Web UI 通过 subprocess 调用 CLI 命令执行辩论，自身仅作为前端界面。所有辩论逻辑由命令行引擎驱动。
+
+### 命令行运行（高级用户）
+
+#### 生成辩论配置
+
+```bash
+# 使用模板手动编辑
 cp template.md my_topic.md
 # 编辑 my_topic.md，填写 YAML 元数据和话题内容
 ```
 
-### 运行辩论
+#### 运行辩论
 
 ```bash
 # 基本运行
@@ -286,27 +290,24 @@ debate-tool/
 ├── install.py             # 安装脚本（交互式 + CLI，纯标准库）
 ├── install-skills.sh      # Claude Code Skill 安装（Shell 版）
 ├── template.md            # 话题文件模板
-├── v2_mechanism_roadmap.md # 辩论机制 v2 改进路线图
 ├── requirements/          # 传统 requirements 文件（向后兼容）
 │   ├── core.txt
-│   ├── cli.txt
-│   ├── web.txt
-│   └── all.txt
+│   └── web.txt
 └── debate_tool/
     ├── __init__.py        # 版本
-    ├── __main__.py        # 统一入口路由（run / build / stance）
+    ├── __main__.py        # 统一入口路由（run / resume / compact / modify / live / stance）
     ├── runner.py          # 辩论运行器（核心引擎）
-    ├── wizard.py          # TUI 向导（14 步状态机）
+    ├── session.py         # DebateSession（Web live 用，通过 subprocess 调用 CLI）
     ├── core.py            # 纯逻辑：默认值、YAML 生成、文件 I/O
-    ├── ui.py              # Curses TUI 基础组件
     ├── stance.py          # 立场生成器（可独立使用）
-    ├── steps.py           # 14 步向导步骤函数
     └── web/
         ├── __init__.py
         ├── __main__.py    # Web 入口
         ├── app.py         # Flask 路由 + API 端点
+        ├── live.py        # 辩论实时查看器 Blueprint（subprocess + 文件监视 → SSE）
         └── templates/
-            └── wizard.html
+            ├── debate_live.html  # 统一 UI（含新建辩论 Modal）
+            └── wizard.html       # 完整配置向导（/wizard 路由）
 ```
 
 ## License

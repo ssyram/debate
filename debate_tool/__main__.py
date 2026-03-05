@@ -10,7 +10,6 @@
     compact  \u624b\u52a8\u538b\u7f29\u65e5\u5fd7\uff08\u751f\u6210 checkpoint\uff09
     modify   \u4fee\u6539 topic \u914d\u7f6e\uff08\u8fa9\u624b/\u88c1\u5224/\u7acb\u573a\uff09\u5e76\u8bb0\u5f55\u53d8\u66f4
     live     \u542f\u52a8\u8fa9\u8bba + Web \u5b9e\u65f6\u67e5\u770b\u5668
-    build    \u751f\u6210\u8fa9\u8bba\u914d\u7f6e\uff08\u5411\u5bfc\uff09
     stance   \u751f\u6210\u8fa9\u624b\u7acb\u573a\u63a8\u8350
 
 \u793a\u4f8b:
@@ -24,7 +23,6 @@
     debate-tool modify my_topic.md --drop B --force
     debate-tool modify my_topic.md --pivot "A|\u65b0\u7684\u7acb\u573a\u63cf\u8ff0"
     debate-tool live my_topic.md
-    debate-tool build
     debate-tool stance my_topic.md --num 5
 """
 
@@ -33,20 +31,6 @@ import sys
 
 def _print_help():
     print(__doc__.strip())
-
-
-def _handle_build(argv):
-    use_cli = "--cli" in argv
-    remaining = [a for a in argv if a != "--cli"]
-
-    if use_cli:
-        from debate_tool.wizard import main as wizard_main
-
-        wizard_main(remaining or None)
-    else:
-        from debate_tool.web.__main__ import main as web_main
-
-        web_main(remaining or None)
 
 
 def _handle_resume(argv):
@@ -70,6 +54,18 @@ def _handle_resume(argv):
     parser.add_argument(
         "--force", action="store_true", help="跳过 topic/log 一致性校验"
     )
+    parser.add_argument(
+        "--cot",
+        "--think",
+        dest="enable_cot",
+        action="store_true",
+        help="为辩手启用思考空间 (CoT)，思考内容不记入日志（--debug 除外）",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="调试模式：将辩手思考过程也写入日志",
+    )
     args = parser.parse_args(argv)
 
     topic_path = args.topic.resolve()
@@ -90,6 +86,8 @@ def _handle_resume(argv):
             guide_prompt=args.guide,
             judge_at_end=not args.no_judge,
             force=args.force,
+            enable_cot=args.enable_cot,
+            debug=args.debug,
         )
     )
 
@@ -284,8 +282,6 @@ def main():
         _handle_modify(remaining)
     elif command == "live":
         _handle_live(remaining)
-    elif command in ("build", "start"):
-        _handle_build(remaining)
     elif command == "stance":
         from debate_tool.stance import main as stance_main
 
