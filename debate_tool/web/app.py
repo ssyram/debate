@@ -47,9 +47,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(debate_bp)
 
-    # ── GET / — serve the wizard page ─────────────────────────
+    # ── GET / — serve the dashboard page ─────────────────────────
     @app.route("/")
     def index():
+        return render_template("dashboard.html")
+
+    # ── GET /wizard — serve the wizard page ──────────────────────
+    @app.route("/wizard")
+    def wizard():
         return render_template("wizard.html")
 
     # ── GET /api/defaults — all default values ────────────────
@@ -294,6 +299,242 @@ def create_app() -> Flask:
             content=content,
         )
 
+    # ── POST /api/execute-run — Execute run command ──────────────
+    @app.route("/api/execute-run", methods=["POST"])
+    def api_execute_run():
+        """Execute debate run command via subprocess."""
+        import subprocess
+
+        data = request.get_json(silent=True) or {}
+        topic_file = data.get("topic_file", "").strip()
+        rounds = data.get("rounds", 3)
+        cross_exam = data.get("cross_exam", False)
+        early_stop = data.get("early_stop", False)
+
+        if not topic_file:
+            return jsonify(error="话题文件不能为空"), 400
+
+        try:
+            cmd = [
+                "python",
+                "-m",
+                "debate_tool",
+                "run",
+                topic_file,
+                "--rounds",
+                str(rounds),
+            ]
+            if cross_exam:
+                cmd.append("--cross-exam")
+            if early_stop:
+                cmd.append("--early-stop")
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            return jsonify(
+                success=result.returncode == 0,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                returncode=result.returncode,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify(error="命令执行超时"), 500
+        except Exception as e:
+            return jsonify(error=f"执行失败: {str(e)}"), 500
+
+    # ── POST /api/execute-resume — Execute resume command ────────
+    @app.route("/api/execute-resume", methods=["POST"])
+    def api_execute_resume():
+        """Execute debate resume command via subprocess."""
+        import subprocess
+
+        data = request.get_json(silent=True) or {}
+        topic_file = data.get("topic_file", "").strip()
+        rounds = data.get("rounds", 1)
+        message = data.get("message", "").strip()
+        cross_exam = data.get("cross_exam", False)
+
+        if not topic_file:
+            return jsonify(error="话题文件不能为空"), 400
+
+        try:
+            cmd = [
+                "python",
+                "-m",
+                "debate_tool",
+                "resume",
+                topic_file,
+                "--rounds",
+                str(rounds),
+            ]
+            if message:
+                cmd.extend(["--message", message])
+            if cross_exam:
+                cmd.append("--cross-exam")
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            return jsonify(
+                success=result.returncode == 0,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                returncode=result.returncode,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify(error="命令执行超时"), 500
+        except Exception as e:
+            return jsonify(error=f"执行失败: {str(e)}"), 500
+
+    # ── POST /api/execute-compact — Execute compact command ──────
+    @app.route("/api/execute-compact", methods=["POST"])
+    def api_execute_compact():
+        """Execute log compact command via subprocess."""
+        import subprocess
+
+        data = request.get_json(silent=True) or {}
+        log_file = data.get("log_file", "").strip()
+        compress_range = data.get("compress_range", "ALL").strip()
+
+        if not log_file:
+            return jsonify(error="日志文件不能为空"), 400
+
+        try:
+            cmd = [
+                "python",
+                "-m",
+                "debate_tool",
+                "compact",
+                log_file,
+                "--compress",
+                compress_range,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            return jsonify(
+                success=result.returncode == 0,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                returncode=result.returncode,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify(error="命令执行超时"), 500
+        except Exception as e:
+            return jsonify(error=f"执行失败: {str(e)}"), 500
+
+    # ── POST /api/execute-modify — Execute modify command ────────
+    @app.route("/api/execute-modify", methods=["POST"])
+    def api_execute_modify():
+        """Execute topic modify command via subprocess."""
+        import subprocess
+
+        data = request.get_json(silent=True) or {}
+        topic_file = data.get("topic_file", "").strip()
+        modify_type = data.get("modify_type", "").strip()
+
+        if not topic_file:
+            return jsonify(error="话题文件不能为空"), 400
+
+        try:
+            cmd = ["python", "-m", "debate_tool", "modify", topic_file]
+
+            if modify_type == "set":
+                field = data.get("field", "").strip()
+                value = data.get("value", "").strip()
+                if not field or not value:
+                    return jsonify(error="字段和值不能为空"), 400
+                cmd.extend(["--set", f"{field}={value}"])
+
+            elif modify_type == "add":
+                debater = data.get("debater", "").strip()
+                reason = data.get("reason", "").strip()
+                if not debater:
+                    return jsonify(error="辩手信息不能为空"), 400
+                cmd.extend(["--add", debater])
+                if reason:
+                    cmd.extend(["--reason", reason])
+
+            elif modify_type == "drop":
+                debater = data.get("debater", "").strip()
+                if not debater:
+                    return jsonify(error="辩手名称不能为空"), 400
+                cmd.extend(["--drop", debater])
+
+            elif modify_type == "pivot":
+                pivot = data.get("pivot", "").strip()
+                reason = data.get("reason", "").strip()
+                if not pivot:
+                    return jsonify(error="立场信息不能为空"), 400
+                cmd.extend(["--pivot", pivot])
+                if reason:
+                    cmd.extend(["--reason", reason])
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            return jsonify(
+                success=result.returncode == 0,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                returncode=result.returncode,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify(error="命令执行超时"), 500
+        except Exception as e:
+            return jsonify(error=f"执行失败: {str(e)}"), 500
+
+    # ── POST /api/execute-stance — Execute stance command ────────
+    @app.route("/api/execute-stance", methods=["POST"])
+    def api_execute_stance():
+        """Execute stance generation command via subprocess."""
+        import subprocess
+
+        data = request.get_json(silent=True) or {}
+        topic_file = data.get("topic_file", "").strip()
+        num = data.get("num", 3)
+        format_type = data.get("format", "json").strip()
+
+        if not topic_file:
+            return jsonify(error="话题文件不能为空"), 400
+
+        try:
+            cmd = [
+                "python",
+                "-m",
+                "debate_tool",
+                "stance",
+                topic_file,
+                "--num",
+                str(num),
+                "--format",
+                format_type,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            return jsonify(
+                success=result.returncode == 0,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                returncode=result.returncode,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify(error="命令执行超时"), 500
+        except Exception as e:
+            return jsonify(error=f"执行失败: {str(e)}"), 500
+
+    @app.route("/api/list-files")
+    def api_list_files():
+        import glob as g
+
+        cwd = Path.cwd()
+        kind = request.args.get("kind", "topic")
+        if kind == "log":
+            pattern = "*_debate_log.md"
+        else:
+            pattern = "*.md"
+        files = sorted(g.glob(str(cwd / pattern)))
+        if kind == "topic":
+            files = [
+                f
+                for f in files
+                if not f.endswith("_debate_log.md")
+                and not f.endswith("_debate_summary.md")
+            ]
+        return jsonify(files=[{"path": f, "name": Path(f).name} for f in files])
+
     return app
 
 
@@ -303,7 +544,9 @@ def _extract_config(data: dict[str, Any]) -> dict[str, Any]:
         "title": data.get("title", ""),
         "rounds": int(data.get("rounds", DEFAULT_ROUNDS)),
         "timeout": int(data.get("timeout", DEFAULT_TIMEOUT)),
-        "max_reply_tokens": int(data.get("max_reply_tokens", data.get("max_tokens", DEFAULT_MAX_TOKENS))),
+        "max_reply_tokens": int(
+            data.get("max_reply_tokens", data.get("max_tokens", DEFAULT_MAX_TOKENS))
+        ),
         "base_url": data.get("base_url", ""),
         "api_key": data.get("api_key", ""),
         "debaters": data.get("debaters", DEFAULT_DEBATERS),

@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>debate-tool 控制面板</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+:root {
+  --bg: #0f0f1a;
+  --bg-card: #1a1a2e;
+  --bg-card-hover: #1f1f35;
+  --bg-input: #16162a;
+  --border: #2a2a45;
+  --border-focus: #818cf8;
+  --text: #e0e0f0;
+  --text-dim: #8888a8;
+  --text-muted: #5a5a78;
+  --accent: #818cf8;
+  --accent-bg: rgba(129,140,248,.12);
+  --green: #86efac;
+  --yellow: #fde68a;
+  --red: #fca5a5;
+  --radius: 10px;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6; font-size: 14px;
+  min-height: 100vh; padding: 20px;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+.header {
+  text-align: center; margin-bottom: 50px;
+}
+.header h1 {
+  font-size: 32px; font-weight: 700; margin-bottom: 10px;
+}
+.header p {
+  color: var(--text-dim); font-size: 15px;
+}
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px; margin-bottom: 40px;
+}
+.card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+  cursor: pointer; transition: all .2s;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.card:hover {
+  background: var(--bg-card-hover); border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.card-icon {
+  font-size: 32px; line-height: 1;
+}
+.card-title {
+  font-size: 18px; font-weight: 600;
+}
+.card-desc {
+  color: var(--text-dim); font-size: 13px; line-height: 1.5;
+}
+.card-action {
+  margin-top: 8px; padding: 8px 12px;
+  background: var(--accent-bg); color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 6px;
+  font-size: 12px; font-weight: 600; text-align: center;
+  cursor: pointer; transition: all .2s;
+}
+.card-action:hover {
+  background: var(--accent); color: var(--bg);
+}
+.modal {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.7); z-index: 1000;
+  align-items: center; justify-content: center;
+}
+.modal.active { display: flex; }
+.modal-content {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 30px;
+  max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;
+  position: relative;
+}
+.modal-header {
+  font-size: 20px; font-weight: 600; margin-bottom: 20px;
+}
+.modal-close {
+  position: absolute; top: 15px; right: 15px;
+  background: none; border: none; color: var(--text-dim);
+  font-size: 24px; cursor: pointer;
+}
+.form-group {
+  margin-bottom: 16px;
+}
+.form-label {
+  display: block; font-size: 13px; font-weight: 600;
+  margin-bottom: 6px; color: var(--text-dim);
+}
+.form-input, .form-select {
+  width: 100%; padding: 10px 12px;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-size: 13px;
+  transition: border .2s;
+}
+.form-input:focus, .form-select:focus {
+  outline: none; border-color: var(--accent);
+}
+.btn {
+  padding: 10px 16px; border-radius: 6px; font-size: 13px;
+  font-weight: 600; cursor: pointer; transition: all .2s;
+  border: none;
+}
+.btn-primary {
+  background: var(--accent); color: var(--bg);
+}
+.btn-primary:hover { opacity: .9; }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn-secondary {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--bg-card-hover); }
+.btn-group {
+  display: flex; gap: 10px; margin-top: 20px;
+}
+.btn-group .btn { flex: 1; }
+.error { color: var(--red); font-size: 12px; margin-top: 4px; }
+.success { color: var(--green); font-size: 12px; margin-top: 4px; }
+.loading { color: var(--yellow); font-size: 12px; margin-top: 4px; }
+.output {
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 6px; padding: 12px; font-size: 12px;
+  font-family: monospace; max-height: 200px; overflow-y: auto;
+  margin-top: 12px; color: var(--text-dim);
+}
+.file-list {
+  max-height: 150px; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg-input);
+}
+.file-item {
+  padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+  transition: background .2s;
+}
+.file-item:hover { background: rgba(129,140,248,.1); }
+.file-item:last-child { border-bottom: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>debate-tool 控制面板</h1>
+    <p>选择操作开始或继续辩论</p>
+  </div>
+
+  <div class="grid">
+    <div class="card" onclick="openModal('run-modal')">
+      <div class="card-icon">🚀</div>
+      <div class="card-title">新建辩论</div>
+      <div class="card-desc">使用配置文件启动新的辩论</div>
+      <div class="card-action">开始</div>
+    </div>
+
+    <div class="card" onclick="openModal('resume-modal')">
+      <div class="card-icon">▶️</div>
+      <div class="card-title">续跑辩论</div>
+      <div class="card-desc">在已有日志基础上追加轮次</div>
+      <div class="card-action">继续</div>
+    </div>
+
+    <div class="card" onclick="openModal('compact-modal')">
+      <div class="card-icon">📦</div>
+      <div class="card-title">压缩日志</div>
+      <div class="card-desc">手动压缩辩论日志生成 checkpoint</div>
+      <div class="card-action">压缩</div>
+    </div>
+
+    <div class="card" onclick="openModal('modify-modal')">
+      <div class="card-icon">⚙️</div>
+      <div class="card-title">修改配置</div>
+      <div class="card-desc">修改辩手、裁判或立场配置</div>
+      <div class="card-action">修改</div>
+    </div>
+
+    <div class="card" onclick="openModal('stance-modal')">
+      <div class="card-icon">💡</div>
+      <div class="card-title">生成立场</div>
+      <div class="card-desc">根据议题自动推荐辩手立场</div>
+      <div class="card-action">生成</div>
+    </div>
+
+    <div class="card" onclick="window.location.href='/wizard'">
+      <div class="card-icon">✨</div>
+      <div class="card-title">配置向导</div>
+      <div class="card-desc">交互式创建新的辩论配置</div>
+      <div class="card-action">创建</div>
+    </div>
+  </div>
+</div>
+
+<!-- 新建辩论 Modal -->
+<div class="modal" id="run-modal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal('run-modal')">✕</button>
+    <div class="modal-header">新建辩论</div>
+    <div class="form-group">
+      <label class="form-label">话题文件</label>
+      <input type="text" class="form-input" id="run-file" placeholder="my_topic.md">
+      <div class="file-list" id="run-file-list"></div>
+      <div class="error" id="run-error"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">轮数</label>
+      <input type="number" class="form-input" id="run-rounds" value="3" min="1">
+    </div>
+    <div class="form-group">
+      <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <input type="checkbox" id="run-cross-exam"> 启用质询
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="run-early-stop"> 启用早停
+      </label>
+    </div>
+    <div id="run-output"></div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="closeModal('run-modal')">取消</button>
+      <button class="btn btn-primary" id="run-btn" onclick="submitRun()">启动辩论</button>
+    </div>
+  </div>
+</div>
+
+<!-- 续跑辩论 Modal -->
+<div class="modal" id="resume-modal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal('resume-modal')">✕</button>
+    <div class="modal-header">续跑辩论</div>
+    <div class="form-group">
+      <label class="form-label">话题文件</label>
+      <input type="text" class="form-input" id="resume-file" placeholder="my_topic.md">
+      <div class="file-list" id="resume-file-list"></div>
+      <div class="error" id="resume-error"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">追加轮数</label>
+      <input type="number" class="form-input" id="resume-rounds" value="1" min="1">
+    </div>
+    <div class="form-group">
+      <label class="form-label">观察者消息（可选）</label>
+      <input type="text" class="form-input" id="resume-message" placeholder="例：请重点讨论安全性">
+    </div>
+    <div class="form-group">
+      <label style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="resume-cross-exam"> 启用质询
+      </label>
+    </div>
+    <div id="resume-output"></div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="closeModal('resume-modal')">取消</button>
+      <button class="btn btn-primary" id="resume-btn" onclick="submitResume()">继续辩论</button>
+    </div>
+  </div>
+</div>
+
+<!-- 压缩日志 Modal -->
+<div class="modal" id="compact-modal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal('compact-modal')">✕</button>
+    <div class="modal-header">压缩日志</div>
+    <div class="form-group">
+      <label class="form-label">日志文件</label>
+      <input type="text" class="form-input" id="compact-file" placeholder="my_topic_debate_log.md">
+      <div class="file-list" id="compact-file-list"></div>
+      <div class="error" id="compact-error"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">压缩范围</label>
+      <select class="form-select" id="compact-range">
+        <option value="ALL">全部压缩</option>
+        <option value="-2">保留最后 2 条</option>
+        <option value="-3">保留最后 3 条</option>
+        <option value="5">最多压缩 5 条</option>
+      </select>
+    </div>
+    <div id="compact-output"></div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="closeModal('compact-modal')">取消</button>
+      <button class="btn btn-primary" id="compact-btn" onclick="submitCompact()">压缩</button>
+    </div>
+  </div>
+</div>
+
+<!-- 修改配置 Modal -->
+<div class="modal" id="modify-modal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal('modify-modal')">✕</button>
+    <div class="modal-header">修改配置</div>
+    <div class="form-group">
+      <label class="form-label">话题文件</label>
+      <input type="text" class="form-input" id="modify-file" placeholder="my_topic.md">
+      <div class="file-list" id="modify-file-list"></div>
+      <div class="error" id="modify-error"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">修改类型</label>
+      <select class="form-select" id="modify-type" onchange="updateModifyForm()">
+        <option value="set">设置字段</option>
+        <option value="add">添加辩手</option>
+        <option value="drop">删除辩手</option>
+        <option value="pivot">修改立场</option>
+      </select>
+    </div>
+    <div id="modify-fields"></div>
+    <div id="modify-output"></div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="closeModal('modify-modal')">取消</button>
+      <button class="btn btn-primary" id="modify-btn" onclick="submitModify()">修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- 生成立场 Modal -->
+<div class="modal" id="stance-modal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal('stance-modal')">✕</button>
+    <div class="modal-header">生成立场</div>
+    <div class="form-group">
+      <label class="form-label">话题文件</label>
+      <input type="text" class="form-input" id="stance-file" placeholder="my_topic.md">
+      <div class="file-list" id="stance-file-list"></div>
+      <div class="error" id="stance-error"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">辩手数量</label>
+      <input type="number" class="form-input" id="stance-num" value="3" min="2" max="10">
+    </div>
+    <div class="form-group">
+      <label class="form-label">输出格式</label>
+      <select class="form-select" id="stance-format">
+        <option value="json">JSON</option>
+        <option value="yaml">YAML</option>
+      </select>
+    </div>
+    <div id="stance-output"></div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="closeModal('stance-modal')">取消</button>
+      <button class="btn btn-primary" id="stance-btn" onclick="submitStance()">生成</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openModal(id) {
+  document.getElementById(id).classList.add('active');
+  loadFileList(id.replace('-modal', ''));
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+}
+
+function loadFileList(modalType) {
+  const kind = modalType === 'compact' ? 'log' : 'topic';
+  fetch(`/api/list-files?kind=${kind}`)
+    .then(r => r.json())
+    .then(data => {
+      const listId = `${modalType}-file-list`;
+      const listEl = document.getElementById(listId);
+      if (!listEl) return;
+      listEl.innerHTML = data.files.map(f => 
+        `<div class="file-item" onclick="selectFile('${modalType}', '${f.name}')">${f.name}</div>`
+      ).join('');
+    });
+}
+
+function selectFile(modalType, filename) {
+  document.getElementById(`${modalType}-file`).value = filename;
+}
+
+function updateModifyForm() {
+  const type = document.getElementById('modify-type').value;
+  const fieldsDiv = document.getElementById('modify-fields');
+  
+  if (type === 'set') {
+    fieldsDiv.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">字段 (例: debater.A.model)</label>
+        <input type="text" class="form-input" id="modify-field" placeholder="debater.A.model">
+      </div>
+      <div class="form-group">
+        <label class="form-label">值</label>
+        <input type="text" class="form-input" id="modify-value" placeholder="gpt-5">
+      </div>
+    `;
+  } else if (type === 'add') {
+    fieldsDiv.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">辩手信息 (名称|模型|风格)</label>
+        <input type="text" class="form-input" id="modify-debater" placeholder="新辩手|gpt-5|风格描述">
+      </div>
+      <div class="form-group">
+        <label class="form-label">原因</label>
+        <input type="text" class="form-input" id="modify-reason" placeholder="添加新辩手">
+      </div>
+    `;
+  } else if (type === 'drop') {
+    fieldsDiv.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">辩手名称</label>
+        <input type="text" class="form-input" id="modify-debater" placeholder="要删除的辩手名称">
+      </div>
+    `;
+  } else if (type === 'pivot') {
+    fieldsDiv.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">辩手|新立场</label>
+        <input type="text" class="form-input" id="modify-pivot" placeholder="A|新的立场描述">
+      </div>
+      <div class="form-group">
+        <label class="form-label">原因</label>
+        <input type="text" class="form-input" id="modify-reason" placeholder="修改立场原因">
+      </div>
+    `;
+  }
+}
+
+updateModifyForm();
+
+async function submitRun() {
+  const file = document.getElementById('run-file').value.trim();
+  if (!file) {
+    document.getElementById('run-error').textContent = '请选择话题文件';
+    return;
+  }
+  
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  const output = document.getElementById('run-output');
+  output.innerHTML = '<div class="loading">执行中...</div>';
+  
+  try {
+    const res = await fetch('/api/execute-run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        topic_file: file,
+        rounds: parseInt(document.getElementById('run-rounds').value),
+        cross_exam: document.getElementById('run-cross-exam').checked,
+        early_stop: document.getElementById('run-early-stop').checked,
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      output.innerHTML = `<div class="success">✓ 辩论启动成功</div><div class="output">${data.stdout}</div>`;
+    } else {
+      output.innerHTML = `<div class="error">✗ 执行失败: ${data.error || data.stderr}</div>`;
+    }
+  } catch (e) {
+    output.innerHTML = `<div class="error">✗ 请求失败: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitResume() {
+  const file = document.getElementById('resume-file').value.trim();
+  if (!file) {
+    document.getElementById('resume-error').textContent = '请选择话题文件';
+    return;
+  }
+  
+  const btn = document.getElementById('resume-btn');
+  btn.disabled = true;
+  const output = document.getElementById('resume-output');
+  output.innerHTML = '<div class="loading">执行中...</div>';
+  
+  try {
+    const res = await fetch('/api/execute-resume', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        topic_file: file,
+        rounds: parseInt(document.getElementById('resume-rounds').value),
+        message: document.getElementById('resume-message').value,
+        cross_exam: document.getElementById('resume-cross-exam').checked,
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      output.innerHTML = `<div class="success">✓ 续跑成功</div><div class="output">${data.stdout}</div>`;
+    } else {
+      output.innerHTML = `<div class="error">✗ 执行失败: ${data.error || data.stderr}</div>`;
+    }
+  } catch (e) {
+    output.innerHTML = `<div class="error">✗ 请求失败: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitCompact() {
+  const file = document.getElementById('compact-file').value.trim();
+  if (!file) {
+    document.getElementById('compact-error').textContent = '请选择日志文件';
+    return;
+  }
+  
+  const btn = document.getElementById('compact-btn');
+  btn.disabled = true;
+  const output = document.getElementById('compact-output');
+  output.innerHTML = '<div class="loading">执行中...</div>';
+  
+  try {
+    const res = await fetch('/api/execute-compact', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        log_file: file,
+        compress_range: document.getElementById('compact-range').value,
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      output.innerHTML = `<div class="success">✓ 压缩成功</div><div class="output">${data.stdout}</div>`;
+    } else {
+      output.innerHTML = `<div class="error">✗ 执行失败: ${data.error || data.stderr}</div>`;
+    }
+  } catch (e) {
+    output.innerHTML = `<div class="error">✗ 请求失败: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitModify() {
+  const file = document.getElementById('modify-file').value.trim();
+  if (!file) {
+    document.getElementById('modify-error').textContent = '请选择话题文件';
+    return;
+  }
+  
+  const type = document.getElementById('modify-type').value;
+  const payload = { topic_file: file, modify_type: type };
+  
+  if (type === 'set') {
+    payload.field = document.getElementById('modify-field').value;
+    payload.value = document.getElementById('modify-value').value;
+  } else if (type === 'add') {
+    payload.debater = document.getElementById('modify-debater').value;
+    payload.reason = document.getElementById('modify-reason').value;
+  } else if (type === 'drop') {
+    payload.debater = document.getElementById('modify-debater').value;
+  } else if (type === 'pivot') {
+    payload.pivot = document.getElementById('modify-pivot').value;
+    payload.reason = document.getElementById('modify-reason').value;
+  }
+  
+  const btn = document.getElementById('modify-btn');
+  btn.disabled = true;
+  const output = document.getElementById('modify-output');
+  output.innerHTML = '<div class="loading">执行中...</div>';
+  
+  try {
+    const res = await fetch('/api/execute-modify', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) {
+      output.innerHTML = `<div class="success">✓ 修改成功</div><div class="output">${data.stdout}</div>`;
+    } else {
+      output.innerHTML = `<div class="error">✗ 执行失败: ${data.error || data.stderr}</div>`;
+    }
+  } catch (e) {
+    output.innerHTML = `<div class="error">✗ 请求失败: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitStance() {
+  const file = document.getElementById('stance-file').value.trim();
+  if (!file) {
+    document.getElementById('stance-error').textContent = '请选择话题文件';
+    return;
+  }
+  
+  const btn = document.getElementById('stance-btn');
+  btn.disabled = true;
+  const output = document.getElementById('stance-output');
+  output.innerHTML = '<div class="loading">执行中...</div>';
+  
+  try {
+    const res = await fetch('/api/execute-stance', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        topic_file: file,
+        num: parseInt(document.getElementById('stance-num').value),
+        format: document.getElementById('stance-format').value,
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      output.innerHTML = `<div class="success">✓ 生成成功</div><div class="output">${data.stdout}</div>`;
+    } else {
+      output.innerHTML = `<div class="error">✗ 执行失败: ${data.error || data.stderr}</div>`;
+    }
+  } catch (e) {
+    output.innerHTML = `<div class="error">✗ 请求失败: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.querySelectorAll('.modal').forEach(modal => {
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.classList.remove('active');
+    }
+  });
+});
+</script>
+</body>
+</html>
