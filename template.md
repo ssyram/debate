@@ -29,6 +29,12 @@ rounds: 3
 # 注意：这是输出限制，不是上下文窗口大小。上下文超限时系统会自动 compact 历史并重试。
 # max_reply_tokens: 6000
 
+# COT (Chain of Thought) 思考模式
+# true = 开启，无思考 token 限制
+# 2000 = 开启，思考不超过 2000 tokens
+# false/省略 = 关闭（默认）
+# cot: false
+
 # 质询轮数 (默认: 0, 即不质询)
 #   1   — R1 后质询 (辩手 round-robin 互相质疑)
 #   3   — R1~R3 后均质询
