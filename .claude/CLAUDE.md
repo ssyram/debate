@@ -5,7 +5,7 @@ This is the debate-tool project — a multi-model debate framework.
 ## Key Files
 
 - `debate_tool/__main__.py` — Unified CLI router (subcommands: `run`, `build`, `stance`)
-- `debate_tool/runner.py` — Debate engine. Usage: `debate-tool run <topic.md> [--rounds N] [--dry-run] [--cross-exam [N]] [--early-stop]`
+- `debate_tool/runner.py` — Debate engine. Usage: `debate-tool run <topic.md> [--rounds N] [--dry-run] [--cross-exam [N]] [--early-stop] [--cot[=LENGTH]]`
 - `debate_tool/wizard.py` — TUI wizard (14-step curses state machine)
 - `debate_tool/core.py` — Defaults, constants, mode presets, convergence check, YAML generation
 - `debate_tool/stance.py` — LLM-powered debater stance recommendation
@@ -19,9 +19,10 @@ This is the debate-tool project — a multi-model debate framework.
 2. `debate-tool run` (or `python -m debate_tool run`) parses the topic, runs N rounds with all debaters in parallel, then calls judge
 3. `--cross-exam [N]` adds cross-examination after N rounds (default 1; -1=every round)
 4. `--early-stop` enables convergence detection (trigram Jaccard) to skip remaining rounds
-5. `debate-tool build` launches wizard (web default, `--cli` for TUI)
-6. Output: `{stem}_debate_log.md` + `{stem}_debate_summary.md`
-7. API priority: per-debater config > topic-level config > env vars (`DEBATE_BASE_URL`, `DEBATE_API_KEY`)
+5. `--cot[=LENGTH]` enables two-stage thinking (CoT) for debaters; thinking is logged with a 🧠 tag and excluded from other debaters' context
+6. `debate-tool build` launches wizard (web default, `--cli` for TUI)
+7. Output: `{stem}_debate_log.md` + `{stem}_debate_summary.md`
+8. API priority: per-debater config > topic-level config > env vars (`DEBATE_BASE_URL`, `DEBATE_API_KEY`)
 
 ## Development Notes
 

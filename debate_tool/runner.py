@@ -49,6 +49,20 @@ def _parse_early_stop(val) -> float:
     return f
 
 
+def _parse_cot(val) -> int | None:
+    """Parse cot YAML field.
+
+    cot: false / null / 0  → None (disabled)
+    cot: true              → 0   (enabled, no token limit)
+    cot: 2000              → 2000 (enabled, 2000-token thinking budget)
+    """
+    if val is False or val is None or val == 0:
+        return None
+    if val is True:
+        return 0
+    return int(val)
+
+
 def parse_topic_file(path: Path) -> dict:
     """解析 Markdown 文件的 YAML front-matter + body。"""
     text = path.read_text(encoding="utf-8")
@@ -91,6 +105,7 @@ def parse_topic_file(path: Path) -> dict:
         # Mode fields
         "cross_exam": int(front.get("cross_exam", 0)),
         "early_stop": _parse_early_stop(front.get("early_stop", False)),
+        "cot_length": _parse_cot(front.get("cot", None)),
     }
     return cfg
 
@@ -230,6 +245,29 @@ def _compact_for_retry(
         )
 
 
+# ── CoT 辅助 ──────────────────────────────────────────────
+
+import re as _re_cot
+
+_THINKING_RE = _re_cot.compile(r"<thinking>(.*?)</thinking>", _re_cot.DOTALL)
+
+
+def _split_cot_response(response: str) -> tuple[str, str]:
+    """Split a COT response into (thinking_content, actual_reply).
+
+    If <thinking>...</thinking> tags are present, extract the thinking block and
+    treat everything after </thinking> as the actual reply (leading whitespace
+    stripped).  If no tags are found, return ("", response) as a fallback.
+    """
+    m = _THINKING_RE.search(response)
+    if m:
+        thinking = m.group(1).strip()
+        after = response[m.end():].lstrip()
+        return thinking, after
+    # Fallback: no tags found — treat entire response as reply
+    return "", response
+
+
 # ── 日志 ──────────────────────────────────────────────────
 
 
@@ -277,6 +315,9 @@ class Log:
                 elif "📝 **Meta**" in header:
                     tag = "meta"
                     name = header.replace("📝 **Meta**", "").strip() or "@meta"
+                elif "🧠 **思考**" in header:
+                    tag = "thinking"
+                    name = header.replace("🧠 **思考**", "").strip() or "思考"
 
                 ts = ""
                 i += 1
@@ -361,6 +402,7 @@ class Log:
             "cross_exam": "🔍",
             "compact_checkpoint": "📦",
             "meta": "📝",
+            "thinking": "🧠",
         }.get(tag, "💬")
         print(f"\n{'=' * 60}\n[{e['seq']}] {icon} {name}\n{'=' * 60}")
         t = content
@@ -380,6 +422,7 @@ class Log:
                 "cross_exam": "🔍 **质询**",
                 "compact_checkpoint": "📦 **Checkpoint**",
                 "meta": "📝 **Meta**",
+                "thinking": "🧠 **思考**",
             }.get(e["tag"], "")
             if tag_label:
                 hdr = f"[{e['seq']}] {tag_label} {e['name']}"
@@ -389,7 +432,10 @@ class Log:
         self.path.write_text("\n".join(lines), encoding="utf-8")
 
     def since(self, after_seq: int) -> str:
-        news = [e for e in self.entries if e["seq"] > after_seq]
+        news = [
+            e for e in self.entries
+            if e["seq"] > after_seq and e.get("tag") != "thinking"
+        ]
         if not news:
             return "(无新内容)"
         return "\n\n".join(f"--- {e['name']} ---\n{e['content']}" for e in news)
@@ -425,8 +471,9 @@ async def run_cross_exam(
     Each questioner references the target's latest speech and poses 2-3 challenges.
     """
     n = len(debaters)
-    # Collect latest round speeches (last N entries in log)
-    latest_entries = log.entries[-n:]
+    # Collect latest round speeches — skip thinking entries, take last N non-thinking entries
+    non_thinking = [e for e in log.entries if e.get("tag") != "thinking"]
+    latest_entries = non_thinking[-n:]
     speech_by_name: dict[str, str] = {e["name"]: e["content"] for e in latest_entries}
 
     for i in range(n):
@@ -463,7 +510,7 @@ async def run_cross_exam(
 # ── 主流程 ────────────────────────────────────────────────
 
 
-async def run(cfg: dict, topic_path: Path):
+async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
     stem = topic_path.stem
     out_dir = topic_path.parent
 
@@ -477,6 +524,9 @@ async def run(cfg: dict, topic_path: Path):
     constraints = cfg["constraints"]
     cross_exam = cfg.get("cross_exam", 0)  # number of rounds with cross-exam
     early_stop = cfg.get("early_stop", 0.0)  # 0=off, (0,1)=threshold
+    # COT: CLI > YAML > None (disabled)
+    if cot_length is None:
+        cot_length = cfg.get("cot_length", None)
     # Per-debate API config
     debate_base_url = (cfg.get("base_url", "") or ENV_BASE_URL).strip()
     debate_api_key = (cfg.get("api_key", "") or ENV_API_KEY).strip()
@@ -499,6 +549,11 @@ async def run(cfg: dict, topic_path: Path):
             flags.append(f"质询(R1~R{max(cross_exam_rounds)})")
     if early_stop:
         flags.append(f"早停(≥{early_stop:.0%})")
+    if cot_length is not None:
+        if cot_length > 0:
+            flags.append(f"CoT(≤{cot_length}t)")
+        else:
+            flags.append("CoT")
     if flags:
         print(f"  [{', '.join(flags)}]")
     print(f"  {rounds} 轮 | 辩手: {', '.join(d['name'] for d in debaters)}")
@@ -554,18 +609,34 @@ async def run(cfg: dict, topic_path: Path):
                     f"你是「{d['name']}」，风格为「{d['style']}」。第 {rnd} 轮。\n\n"
                     f"任务：{task_desc}{constraints_block}"
                 )
-                return await call_llm(
+                if cot_length is not None:
+                    cot_note = "请先在 <thinking>...</thinking> 标签内完成你的思考过程。"
+                    if cot_length > 0:
+                        cot_note += f" 思考内容不超过 {cot_length} token。"
+                    sys_prompt = sys_prompt + "\n\n" + cot_note
+                    call_max_tokens = (
+                        (cot_length + max_reply_tokens) if cot_length > 0
+                        else (max_reply_tokens + 2000)
+                    )
+                else:
+                    call_max_tokens = max_reply_tokens
+                raw = await call_llm(
                     d["model"],
                     sys_prompt,
                     _ctx,
-                    max_reply_tokens=max_reply_tokens,
+                    max_reply_tokens=call_max_tokens,
                     timeout=timeout,
                     base_url=debater_base_url,
                     api_key=debater_api_key,
                 )
+                if cot_length is not None:
+                    thinking, reply = _split_cot_response(raw)
+                else:
+                    thinking, reply = "", raw
+                return thinking, reply
 
             try:
-                results = await asyncio.gather(*[speak(d) for d in debaters])
+                raw_results = await asyncio.gather(*[speak(d) for d in debaters])
                 break
             except TokenLimitError as e:
                 print(
@@ -585,13 +656,17 @@ async def run(cfg: dict, topic_path: Path):
             raise RuntimeError(
                 f"第 {rnd} 轮经过多次 compact 仍无法完成，请手动压缩日志"
             )
-        for d, resp in zip(debaters, results):
-            log.add(d["name"], resp)
+        replies = []
+        for d, (thinking, reply) in zip(debaters, raw_results):
+            if thinking:
+                log.add(d["name"], thinking, "thinking")
+            log.add(d["name"], reply)
+            replies.append(reply)
         last_seq = mark
 
         # ── Phase B: 早停检查 ──
         if early_stop and rnd < rounds:
-            converged, avg_sim = check_convergence(results, early_stop)
+            converged, avg_sim = check_convergence(replies, early_stop)
             print(f"\n  📊 收敛检查: 平均相似度 {avg_sim:.1%} (阈值 {early_stop:.0%})")
             if converged:
                 print("  ⚡ 观点已收敛，跳过剩余轮次，直接进入裁判阶段")
@@ -687,6 +762,7 @@ async def resume(
     guide_prompt: str = "",
     judge_at_end: bool = True,
     force: bool = False,
+    cot_length: int | None = None,
 ) -> None:
     stem = topic_path.stem
     out_dir = topic_path.parent
@@ -712,6 +788,9 @@ async def resume(
     debate_api_key = (cfg.get("api_key", "") or ENV_API_KEY).strip()
     num_debaters = len(debaters)
     system_text = f"## 辩论议题\n\n{topic}"
+    # COT: CLI > YAML > None (disabled)
+    if cot_length is None:
+        cot_length = cfg.get("cot_length", None)
 
     if message:
         log.add("👤 观察者", message, "human")
@@ -751,20 +830,36 @@ async def resume(
                 f"你是「{d['name']}」，风格为「{d['style']}」。第 {rnd} 轮（续跑）。\n\n"
                 f"任务：{task_desc}{constraints_block}"
             )
+            if cot_length is not None:
+                cot_note = "请先在 <thinking>...</thinking> 标签内完成你的思考过程。"
+                if cot_length > 0:
+                    cot_note += f" 思考内容不超过 {cot_length} token。"
+                sys_prompt = sys_prompt + "\n\n" + cot_note
+                call_max_tokens = (
+                    (cot_length + max_reply_tokens) if cot_length > 0
+                    else (max_reply_tokens + 2000)
+                )
+            else:
+                call_max_tokens = max_reply_tokens
             ctx = f"{system_text}\n\n## 辩论历史\n\n{_new_log or new_log}"
-            return await call_llm(
+            raw = await call_llm(
                 d["model"],
                 sys_prompt,
                 ctx,
-                max_reply_tokens=max_reply_tokens,
+                max_reply_tokens=call_max_tokens,
                 timeout=timeout,
                 base_url=debater_base_url,
                 api_key=debater_api_key,
             )
+            if cot_length is not None:
+                thinking, reply = _split_cot_response(raw)
+            else:
+                thinking, reply = "", raw
+            return thinking, reply
 
         for compact_attempt in range(10):
             try:
-                results = await asyncio.gather(*[speak(d) for d in debaters])
+                raw_results = await asyncio.gather(*[speak(d) for d in debaters])
                 break
             except TokenLimitError as e:
                 print(
@@ -792,19 +887,35 @@ async def resume(
                         f"你是「{d['name']}」，风格为「{d['style']}」。第 {rnd} 轮（续跑）。\n\n"
                         f"任务：{task_desc}{constraints_block}"
                     )
+                    if cot_length is not None:
+                        cot_note = "请先在 <thinking>...</thinking> 标签内完成你的思考过程。"
+                        if cot_length > 0:
+                            cot_note += f" 思考内容不超过 {cot_length} token。"
+                        sys_prompt = sys_prompt + "\n\n" + cot_note
+                        call_max_tokens = (
+                            (cot_length + max_reply_tokens) if cot_length > 0
+                            else (max_reply_tokens + 2000)
+                        )
+                    else:
+                        call_max_tokens = max_reply_tokens
                     ctx = f"{system_text}\n\n## 辩论历史\n\n{_nl}"
-                    return await call_llm(
+                    raw = await call_llm(
                         d["model"],
                         sys_prompt,
                         ctx,
-                        max_reply_tokens=max_reply_tokens,
+                        max_reply_tokens=call_max_tokens,
                         timeout=timeout,
                         base_url=debater_base_url,
                         api_key=debater_api_key,
                     )
+                    if cot_length is not None:
+                        thinking, reply = _split_cot_response(raw)
+                    else:
+                        thinking, reply = "", raw
+                    return thinking, reply
 
                 try:
-                    results = await asyncio.gather(*[speak_retry(d) for d in debaters])
+                    raw_results = await asyncio.gather(*[speak_retry(d) for d in debaters])
                     break
                 except TokenLimitError as e2:
                     print(
@@ -821,8 +932,10 @@ async def resume(
                 f"第 {rnd} 轮经过多次 compact 仍无法完成，请手动压缩日志"
             )
 
-        for d, resp in zip(debaters, results):
-            log.add(d["name"], resp)
+        for d, (thinking, reply) in zip(debaters, raw_results):
+            if thinking:
+                log.add(d["name"], thinking, "thinking")
+            log.add(d["name"], reply)
 
         if cross_exam and r_offset < extra_rounds:
             print(f"\n\n🔍 质询环节 (续跑 R{rnd}.5)\n")
@@ -1003,7 +1116,7 @@ def modify_topic(
             e["name"]
             for e in log.entries
             if e.get("tag")
-            not in ("summary", "cross_exam", "compact_checkpoint", "human")
+            not in ("summary", "cross_exam", "compact_checkpoint", "human", "meta", "thinking")
         }
     else:
         log = None
@@ -1131,6 +1244,7 @@ def validate_topic_log_consistency(
         "compact_checkpoint",
         "meta",
         "human",
+        "thinking",
     }
     log_speaker_names: set[str] = set()
     log_judge_names: set[str] = set()
@@ -1272,6 +1386,17 @@ def main(argv=None):
         metavar="T",
         help="启用收敛早停 (默认阈值 0.55; 可指定 0~1 之间的值)",
     )
+    ap.add_argument(
+        "--cot",
+        "--think",
+        dest="cot_length",
+        nargs="?",
+        type=int,
+        const=0,
+        default=None,
+        metavar="LENGTH",
+        help="为辩手启用思考空间 (CoT)。LENGTH 为可选思考 token 预算，省略则不限制。",
+    )
 
     args = ap.parse_args(argv)
 
@@ -1296,6 +1421,10 @@ def main(argv=None):
     # --rounds 总是覆盖
     if args.rounds is not None:
         cfg["rounds"] = args.rounds
+
+    # --cot: CLI > YAML > None (disabled)
+    # args.cot_length: None=not provided, 0=--cot without value, N=--cot=N
+    cli_cot = args.cot_length  # None | 0 | positive int
 
     # 确保默认值
     cfg.setdefault("cross_exam", 0)
@@ -1327,6 +1456,14 @@ def main(argv=None):
         print(
             f"  早停:     {'是 (阈值 {:.0%})'.format(cfg.get('early_stop', 0.0)) if cfg.get('early_stop') else '否'}"
         )
+        effective_cot = cli_cot if cli_cot is not None else cfg.get("cot_length", None)
+        if effective_cot is not None:
+            if effective_cot > 0:
+                print(f"  CoT:      是 (思考预算 {effective_cot} token)")
+            else:
+                print(f"  CoT:      是 (无预算限制)")
+        else:
+            print(f"  CoT:      否")
         print(f"  超时:     {cfg['timeout']}s")
         print(f"  max_reply_tokens: {cfg['max_reply_tokens']}")
         print(f"\n  辩手:")
@@ -1375,7 +1512,7 @@ def main(argv=None):
         sys.exit(2)
 
     # 正式运行
-    asyncio.run(run(cfg, topic_path))
+    asyncio.run(run(cfg, topic_path, cot_length=cli_cot))
 
 
 if __name__ == "__main__":

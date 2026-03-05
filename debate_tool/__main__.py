@@ -57,14 +57,13 @@ def _handle_resume(argv):
     parser.add_argument(
         "--cot",
         "--think",
-        dest="enable_cot",
-        action="store_true",
-        help="为辩手启用思考空间 (CoT)，思考内容不记入日志（--debug 除外）",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="调试模式：将辩手思考过程也写入日志",
+        dest="cot_length",
+        nargs="?",
+        type=int,
+        const=0,
+        default=None,
+        metavar="LENGTH",
+        help="为辩手启用思考空间 (CoT)。LENGTH 为可选思考 token 预算，省略则不限制。",
     )
     args = parser.parse_args(argv)
 
@@ -86,8 +85,7 @@ def _handle_resume(argv):
             guide_prompt=args.guide,
             judge_at_end=not args.no_judge,
             force=args.force,
-            enable_cot=args.enable_cot,
-            debug=args.debug,
+            cot_length=args.cot_length,
         )
     )
 
