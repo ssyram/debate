@@ -1,0 +1,178 @@
+You are a debate orchestrator using the debate-tool framework.
+The user wants to run a multi-model debate. Their input: $ARGUMENTS
+
+## Your Task
+
+Guide the user through setting up and running a debate using `debate-tool`.
+
+### Step 1: Understand the Topic
+
+Analyze `$ARGUMENTS` to understand what the user wants to debate. If the input is vague or missing, ask the user to clarify the debate topic.
+
+### Step 2: Locate debate-tool
+
+The debate tool directory is determined by the environment variable `DEBATE_TOOL_DIR`.
+Run `echo $DEBATE_TOOL_DIR` to find it. If the variable is unset, ask the user where debate-tool is installed, or try `~/workspace/github/debate` as a fallback.
+
+**Important:** The CLI entry point is `python3 -m debate_tool <command>`, run from within `$DEBATE_TOOL_DIR`. Available subcommands:
+- `run <topic.md>` — run a debate from a topic file
+- `run <topic.md> --cross-exam` — add cross-examination after R1 (round-robin challenges)
+- `run <topic.md> --cross-exam 3` — cross-exam after R1, R2, and R3
+- `run <topic.md> --cross-exam -1` — cross-exam after every round (except last)
+- `run <topic.md> --early-stop` — enable convergence early-stop (default threshold 55%)
+- `run <topic.md> --early-stop 0.6` — early-stop with custom threshold
+- `stance <topic.md>` — generate debater stance recommendations via LLM
+
+### Step 3: Create the Topic File
+
+Generate a `.md` topic file in the **current working directory** (not in the debate-tool directory).
+
+The topic file format uses YAML front-matter between `---` delimiters, followed by Markdown body content:
+
+```markdown
+---
+title: "Debate Title"
+rounds: 3
+# cross_exam: 1       # cross-examination rounds (0=disabled, 1=after R1, -1=after every round)
+# early_stop: true    # convergence early-stop (true=default threshold 55%, or custom 0~1 float like 0.6)
+# timeout: 300
+# max_tokens: 6000
+
+# API config (optional, falls back to env vars DEBATE_BASE_URL / DEBATE_API_KEY)
+# base_url: "https://..."
+# api_key: "${DEBATE_API_KEY}"
+
+debaters:
+  - name: "GPT-5.2"
+    model: "gpt-5.2"
+    style: "Pragmatic engineering approach"
+    # base_url: "override per debater"
+    # api_key: "override per debater"
+  - name: "Kimi-K2.5"
+    model: "kimi-k2.5"
+    style: "Innovation challenger"
+  - name: "Sonnet-4-6"
+    model: "claude-sonnet-4-6"
+    style: "Rigorous analytical approach"
+
+judge:
+  model: "claude-opus-4-6"
+  name: "Opus-4-6 (Judge)"
+  max_tokens: 8000
+
+# constraints: |
+#   - Additional rules injected into each debater's system prompt
+# round1_task: |
+#   Provide stance and recommendations on the debate topic, 200-300 words each
+# middle_task: |
+#   Respond to other debaters' points, deepen your stance, 400-600 words
+# final_task: |
+#   Final round: provide final recommendations with priority marking, 300-500 words
+# judge_instructions: |
+#   Output structured summary with key rulings, debater performance, and action items...
+# NOTE: English shown here; adapt language as needed for your topic and audience, styles or so.
+---
+
+# Debate Body
+
+Insert debate background, topic statement, key data, and context here.
+```
+
+#### Field Reference
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `title` | string | filename | Debate title |
+| `rounds` | int | 3 | Number of debate rounds |
+| `timeout` | int | 300 | API timeout in seconds |
+| `max_tokens` | int | 6000 | Max tokens per debater response |
+| `cross_exam` | int | 0 | Cross-examination rounds (0=disabled, 1=after R1, -1=after every round) |
+| `early_stop` | bool/float | false | Convergence early-stop: `true`=default 55% threshold, or custom 0~1 float |
+| `base_url` | string | env var | OpenAI-compatible API endpoint |
+| `api_key` | string | env var | API key |
+| `debaters` | list | 3 defaults | Debater configurations (>=2 required) |
+| `judge` | object | opus-4-6 | Judge configuration |
+| `constraints` | string | "" | Additional rules injected into system prompts |
+| `round1_task` | string | (built-in) | Round 1 task instructions |
+| `middle_task` | string | (built-in) | Middle rounds task instructions |
+| `final_task` | string | (built-in) | Final round task instructions |
+| `judge_instructions` | string | (built-in) | Judge evaluation criteria |
+
+Each debater requires: `name` (display name), `model` (model ID), `style` (stance description). Optionally override `base_url`/`api_key` per debater.
+
+#### Style Tips
+
+Design debaters with contrasting or complementary stances to create productive debate tension:
+- **General approach**: Pragmatic engineering / Innovation challenger / Rigorous analysis
+- **Trade-off focused**: Minimalist / Comprehensive / Balanced
+- **Scrutiny-focused**: Strict review / Verification support / Neutral analysis
+- **Custom**: "Red team attacker: goal is to find all vulnerabilities..."
+
+
+### Step 4: Confirm with User
+
+Before running, show the user:
+1. The generated topic file path
+2. A summary of configuration (debaters, judge, rounds)
+3. Ask if they want to adjust anything
+
+You can also suggest a dry-run first:
+```bash
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --dry-run
+```
+
+### Step 5: Run the Debate
+
+Execute the debate:
+```bash
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file>
+```
+
+For cross-examination (recommended for complex/contentious topics):
+```bash
+# Cross-exam after R1
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam
+
+# Cross-exam after R1, R2, and R3
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam 3
+
+# Cross-exam after every round (except last)
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --cross-exam -1
+```
+
+The `--cross-exam` flag adds cross-examination rounds where each debater challenges the next in round-robin order (d1→d2, d2→d3, ..., dN→d1). The following debate round's task becomes "respond to challenges received". This significantly improves debate quality — debaters must respond to specific critiques rather than giving generic rebuttals.
+
+To enable early-stop (skip remaining rounds if debaters converge):
+```bash
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --early-stop
+cd $DEBATE_TOOL_DIR && python3 -m debate_tool run <topic_file> --early-stop 0.6  # custom threshold
+```
+
+The debate will:
+- Run all debaters in parallel for each round
+- (Cross-exam) After specified rounds, run serial cross-examination
+- (Cross-exam) Next round's task becomes "respond to challenges received"
+- (Early-stop) After each round, check pairwise convergence; skip to judge if threshold met
+- After all rounds, the judge produces a structured summary
+- Output two files in the same directory as the topic file:
+  - `{stem}_debate_log.md` — full debate log
+  - `{stem}_debate_summary.md` — judge's final summary
+
+### Step 6: Present Results
+
+After the debate completes, read and present the summary file to the user. Highlight:
+- Key rulings and their rationale
+- Debater performance highlights
+- Action items or recommendations
+
+## Important Notes
+
+- You should **write the topic file directly** — do NOT use any interactive wizard or `build` command. Your job is to generate the `.md` file with proper YAML front-matter, then `run` it.
+- The topic body (Markdown after the `---` delimiter) is the actual content debated. Make it detailed and structured.
+- API credentials: per-debater > topic-level > env vars (`DEBATE_BASE_URL`, `DEBATE_API_KEY`).
+- At least 2 debaters are required.
+- If the user specifies models, styles, or rounds explicitly, respect their choices. Otherwise, use sensible defaults based on the topic.
+- **Debater models** are controlled by the env var `DEFAULT_DEBATE_MODELS` (comma-separated list, e.g. `"gpt-5.2,kimi-k2.5,MiniMax-M2.5"`). The i-th debater gets `models[i % len(models)]`. Defaults to `gpt-5.2` if unset. When writing topic files, cycle through this list for debater `model` fields.
+- Language: Use the language used in the current chat with user. The example YAML is in English, but adapt as needed.
+- **Always use `python3`** (not `python`) to avoid hitting Python 2.7 on some systems.
+- The stance generator assigns debater models from `DEFAULT_DEBATE_MODELS` (cyclic). Invoke via: `cd $DEBATE_TOOL_DIR && python3 -m debate_tool stance <topic_file> --num 5`
