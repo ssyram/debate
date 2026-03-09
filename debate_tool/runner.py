@@ -1005,7 +1005,7 @@ async def resume(
         judge_api_key = (judge.get("api_key", "") or debate_api_key).strip()
         judge_ctx = log.since(0)
 
-        for _attempt in range(5):
+        for _ in range(5):
             try:
                 summary = await call_llm(
                     judge["model"],
