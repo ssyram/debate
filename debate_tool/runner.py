@@ -396,7 +396,7 @@ class Log:
 
         return log
 
-    def add(self, name: str, content: str, tag: str = ""):
+    def add(self, name: str, content: str, tag: str = "", flush: bool = True):
         e = {
             "seq": len(self.entries) + 1,
             "ts": datetime.now().isoformat(),
@@ -415,7 +415,8 @@ class Log:
         print(f"\n{'=' * 60}\n[{e['seq']}] {icon} {name}\n{'=' * 60}")
         t = content
         print(t[:800] + "\n...(见日志)" if len(t) > 800 else t)
-        self._flush()
+        if flush:
+            self._flush()
 
     def _flush(self):
         if self._pre_checkpoint_text:
@@ -437,7 +438,9 @@ class Log:
             else:
                 hdr = f"[{e['seq']}] {e['name']}"
             lines.append(f"\n### {hdr}\n\n*{e['ts']}*\n\n{e['content']}\n\n---\n")
-        self.path.write_text("\n".join(lines), encoding="utf-8")
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text("\n".join(lines), encoding="utf-8")
+        tmp.replace(self.path)
 
     def since(self, after_seq: int) -> str:
         news = [
@@ -664,12 +667,12 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
             raise RuntimeError(
                 f"第 {rnd} 轮经过多次 compact 仍无法完成，请手动压缩日志"
             )
-        replies = []
         for d, (thinking, reply) in zip(debaters, raw_results):
             if thinking:
-                log.add(d["name"], thinking, "thinking")
-            log.add(d["name"], reply)
+                log.add(d["name"], thinking, "thinking", flush=False)
+            log.add(d["name"], reply, flush=False)
             replies.append(reply)
+        log._flush()  # 一次性写入
         last_seq = mark
 
         # ── Phase B: 早停检查 ──
@@ -942,8 +945,9 @@ async def resume(
 
         for d, (thinking, reply) in zip(debaters, raw_results):
             if thinking:
-                log.add(d["name"], thinking, "thinking")
-            log.add(d["name"], reply)
+                log.add(d["name"], thinking, "thinking", flush=False)
+            log.add(d["name"], reply, flush=False)
+        log._flush()  # 一次性写入
 
         do_cross_exam = (
             cross_exam != 0
