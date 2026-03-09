@@ -207,7 +207,11 @@ async def call_llm(
                     limit = _parse_token_limit(body_text) or 0
                     raise TokenLimitError(model, limit, body_text)
                 r.raise_for_status()
-                return r.json()["choices"][0]["message"]["content"]
+                choice = r.json()["choices"][0]
+                content = choice["message"]["content"]
+                if choice.get("finish_reason") == "length":
+                    content += "\n\n[WARNING: output was truncated due to max_tokens limit]"
+                return content
             except TokenLimitError:
                 raise
             except Exception as e:
@@ -604,8 +608,9 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
 
         mark = log.entries[-1]["seq"] if log.entries else 0
         current_user_ctx = user_ctx
+        replies = []
 
-        for compact_attempt in range(10):
+        for _ in range(10):
 
             async def speak(
                 d,
