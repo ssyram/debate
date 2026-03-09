@@ -40,7 +40,7 @@ rounds: 3
 
 # API config (optional, falls back to env vars DEBATE_BASE_URL / DEBATE_API_KEY)
 # base_url: "https://..."
-# api_key: "${DEBATE_API_KEY}"
+# api_key: ${DEBATE_API_KEY}
 
 debaters:
   - name: "GPT-5.2"
