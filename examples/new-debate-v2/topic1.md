@@ -4,8 +4,8 @@ rounds: 3
 cross_exam: 2
 max_reply_tokens: 10000
 timeout: 420
-base_url: "${DEBATE_BASE_URL}"
-api_key: "${DEBATE_API_KEY}"
+base_url: ${DEBATE_BASE_URL}
+api_key: ${DEBATE_API_KEY}
 
 debaters:
   - name: Linus Torvalds
