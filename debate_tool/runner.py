@@ -743,7 +743,6 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
                 break
 
         # ── Phase C: 质询（若当前轮在 cross_exam_rounds 中且非最后一轮） ──
-        challenged_last = None
         if rnd in cross_exam_rounds and rnd < rounds:
             print(f"\n\n🔍 质询环节 (R{rnd}.5)\n")
             challenged_set = await run_cross_exam(
@@ -757,6 +756,8 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
                 debate_api_key=debate_api_key,
             )
             challenged_last = challenged_set
+        else:
+            challenged_last = None
 
     # ══════════════════════════════════════════════════
     #  裁判总结
