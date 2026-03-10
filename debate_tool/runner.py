@@ -93,8 +93,14 @@ def parse_topic_file(path: Path) -> dict:
         "timeout": front.get("timeout", 300),
         "max_reply_tokens": front.get("max_reply_tokens")
         or front.get("max_tokens", 6000),
-        "debaters": front.get("debaters", DEFAULT_DEBATERS),
-        "judge": {**DEFAULT_JUDGE, **front.get("judge", {})},
+        "debaters": [
+            {**d, "base_url": _expand_env(str(d.get("base_url", "") or "")), "api_key": _expand_env(str(d.get("api_key", "") or ""))}
+            for d in front.get("debaters", DEFAULT_DEBATERS)
+        ],
+        "judge": {
+            **DEFAULT_JUDGE,
+            **{k: (_expand_env(str(v)) if k in ("base_url", "api_key") else v) for k, v in front.get("judge", {}).items()},
+        },
         "constraints": front.get("constraints", "").strip(),
         "round1_task": front.get(
             "round1_task", "针对各议题给出立场和建议，每个 200-300 字"
