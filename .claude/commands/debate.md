@@ -447,3 +447,18 @@ judge_instructions: |
     ↓
 更新 README（来龙去脉 + 三大推进 + 最终裁定 + 未解问题 + 文件索引）
 ```
+
+---
+
+## Standard Workflow
+
+**辩论完整标准流程（Debate Standard Workflow）**：
+
+1. **搜集信息**：收集足够的背景信息（已有设计稿、相关 summary、前置决策）
+2. **写 topic**：写 topic 文件，必须包含：完整系统背景（让辩手无需读其他文件）+ 具体决策点说明 + 开放性问题框架，API 凭证使用 `${DEBATE_BASE_URL}` / `${DEBATE_API_KEY}` 占位符
+3. **自洽性检查**：只看那一份 topic 文档，判断背景是否完整自洽；如有问题先读相关文件再补充修复
+4. **运行辩论**：从 `.local/test_kimi_v7.md` 注入真实凭证，运行 `python3 -m debate_tool run <topic.md> --rounds N --cross-exam`，运行后立刻还原占位符
+5. **查看遗留问题**：读取 summary，评估是否有未解决的障碍点或新矛盾
+6. **后续处理**：
+   - 有新话题 → 重新走完整流程（步骤 1 起）
+   - 续跑现有辩论 → 写 message + 运行 → 综合 → 评估 → 循环

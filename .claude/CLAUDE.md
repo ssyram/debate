@@ -33,3 +33,18 @@ This is the debate-tool project — a multi-model debate framework.
 - Root-level `debate.py` and `new_debate.py` have been deleted; all logic lives in `debate_tool/` package
 - Always use `python3` (not `python`) to avoid Python 2.7 on some systems
 - Convergence check uses pure-Python trigram Jaccard (no external deps), supports CJK and Latin
+- API config: topic files must use `${DEBATE_BASE_URL}` / `${DEBATE_API_KEY}` placeholders for base_url and api_key; real values are injected via environment variables or `.env`; hard-coding is not allowed
+- Commits: Never commit on your own initiative; only commit when the user explicitly instructs it
+
+## Debate Standard Workflow
+
+**辩论完整标准流程（Debate Standard Workflow）**：
+
+1. **搜集信息**：收集足够的背景信息（已有设计稿、相关 summary、前置决策）
+2. **写 topic**：写 topic 文件，必须包含：完整系统背景（让辩手无需读其他文件）+ 具体决策点说明 + 开放性问题框架，API 凭证使用 `${DEBATE_BASE_URL}` / `${DEBATE_API_KEY}` 占位符
+3. **自洽性检查**：只看那一份 topic 文档，判断背景是否完整自洽；如有问题先读相关文件再补充修复
+4. **运行辩论**：从 `.local/test_kimi_v7.md` 注入真实凭证，运行 `python3 -m debate_tool run <topic.md> --rounds N --cross-exam`，运行后立刻还原占位符
+5. **查看遗留问题**：读取 summary，评估是否有未解决的障碍点或新矛盾
+6. **后续处理**：
+   - 有新话题 → 重新走完整流程（步骤 1 起）
+   - 续跑现有辩论 → 写 message + 运行 → 综合 → 评估 → 循环
