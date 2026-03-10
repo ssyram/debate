@@ -485,11 +485,11 @@ async def run_cross_exam(
     timeout: int,
     debate_base_url: str,
     debate_api_key: str,
-):
-    """Round-robin cross-examination after a debate round.
+) -> set[str]:
+    """Dynamic cross-examination after a debate round.
 
-    Pairing: d1→d2, d2→d3, ..., dN→d1.
-    Each questioner references the target's latest speech and poses 2-3 challenges.
+    Each questioner sees all debaters' latest speeches, then chooses whom to challenge.
+    Returns the set of debater names who were challenged (parsed from LLM responses).
     """
     n = len(debaters)
     # Collect latest round speeches — skip thinking entries, take last N non-thinking entries
@@ -497,23 +497,32 @@ async def run_cross_exam(
     latest_entries = non_thinking[-n:]
     speech_by_name: dict[str, str] = {e["name"]: e["content"] for e in latest_entries}
 
-    for i in range(n):
-        questioner = debaters[i]
-        target = debaters[(i + 1) % n]
-        target_speech = speech_by_name.get(target["name"], "(无发言)")
+    # Build summary of all debaters' latest speeches
+    all_speeches_parts = []
+    for d in debaters:
+        speech = speech_by_name.get(d["name"], "(无发言)")
+        all_speeches_parts.append(f"## {d['name']} 的第 {rnd} 轮发言\n\n{speech}")
+    all_speeches_summary = "\n\n---\n\n".join(all_speeches_parts)
 
+    challenged_set: set[str] = set()
+    debater_names = [d["name"] for d in debaters]
+
+    for questioner in debaters:
         q_base_url = (questioner.get("base_url", "") or debate_base_url).strip()
         q_api_key = (questioner.get("api_key", "") or debate_api_key).strip()
 
         sys_prompt = (
             f"你是「{questioner['name']}」（{questioner['style']}），"
             f"现在进入质询环节。\n\n"
-            f"请针对「{target['name']}」的第 {rnd} 轮发言提出 2-3 个尖锐质疑，"
-            f"指出其论证中的薄弱环节、遗漏或矛盾之处。"
+            f"请先选择你最想质询的对手（说明理由），然后针对该对手提出 2-3 个尖锐质疑，"
+            f"指出其论证中的薄弱环节、遗漏或矛盾之处。\n\n"
+            f"【格式要求】回复必须以如下一行开头（不得省略）：\n"
+            f"质询对象：{{被质询者姓名}}\n\n"
+            f"其中姓名必须是以下辩手之一：{', '.join(d for d in debater_names if d != questioner['name'])}"
         )
         user_ctx = (
             f"## 辩论议题\n\n{topic}\n\n"
-            f"## {target['name']} 的第 {rnd} 轮发言\n\n{target_speech}"
+            f"## 各辩手第 {rnd} 轮发言\n\n{all_speeches_summary}"
         )
 
         result = await call_llm(
@@ -525,7 +534,29 @@ async def run_cross_exam(
             base_url=q_base_url,
             api_key=q_api_key,
         )
-        log.add(f"{questioner['name']} → {target['name']}", result, "cross_exam")
+
+        # Extract challenged debater name from "质询对象：{name}" at start of reply
+        challenged_name: str | None = None
+        for line in result.splitlines():
+            line = line.strip()
+            if line.startswith("质询对象：") or line.startswith("质询对象:"):
+                candidate = line.split("：", 1)[-1].split(":", 1)[-1].strip()
+                # Validate: must be a known debater (not the questioner)
+                for dname in debater_names:
+                    if dname == candidate or dname in candidate or candidate in dname:
+                        if dname != questioner["name"]:
+                            challenged_name = dname
+                            break
+                break
+
+        if challenged_name:
+            challenged_set.add(challenged_name)
+            log.add(f"{questioner['name']} → {challenged_name}", result, "cross_exam")
+        else:
+            # Fallback: log without a resolved target name
+            log.add(f"{questioner['name']} → (未解析)", result, "cross_exam")
+
+    return challenged_set
 
 
 # ── 主流程 ────────────────────────────────────────────────
@@ -584,7 +615,7 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
     print("=" * 60)
 
     last_seq = 0
-    had_cross_exam_last = False
+    challenged_last: set[str] | None = None
 
     for rnd in range(1, rounds + 1):
         print(f"\n\n📢 第 {rnd}/{rounds} 轮\n")
@@ -593,20 +624,13 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
         # ── Phase A: 并行辩手发言 ──
         if rnd == 1:
             user_ctx = f"## 辩论议题\n\n{topic}"
-            task_desc = cfg["round1_task"]
+            base_task_desc = cfg["round1_task"]
         elif rnd == rounds:
             user_ctx = f"## 辩论议题\n\n{topic}\n\n## 上轮辩论内容\n\n{new_log}"
-            task_desc = cfg["final_task"]
+            base_task_desc = cfg["final_task"]
         else:
             user_ctx = f"## 辩论议题\n\n{topic}\n\n## 上轮辩论内容\n\n{new_log}"
-            task_desc = cfg["middle_task"]
-
-        # If cross_exam happened last round, ask debaters to respond to challenges
-        if had_cross_exam_last:
-            task_desc = (
-                "逐条回应你收到的质询，指出对方质疑中的不当之处，"
-                "并可修正自己的方案。400-600 字"
-            )
+            base_task_desc = cfg["middle_task"]
 
         constraints_block = ""
         if constraints:
@@ -621,12 +645,36 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
             async def speak(
                 d,
                 rnd=rnd,
-                task_desc=task_desc,
+                base_task_desc=base_task_desc,
                 _ctx=current_user_ctx,
                 constraints_block=constraints_block,
+                _challenged_last=challenged_last,
             ):
                 debater_base_url = (d.get("base_url", "") or debate_base_url).strip()
                 debater_api_key = (d.get("api_key", "") or debate_api_key).strip()
+                # Determine per-debater task_desc based on whether challenged last round
+                if _challenged_last is not None:
+                    if d["name"] in _challenged_last:
+                        if rnd == rounds:
+                            task_desc = (
+                                "逐条回应你收到的质询，指出对方质疑中的不当之处，"
+                                "并可修正自己的方案。\n\n此外，" + base_task_desc
+                            )
+                        else:
+                            task_desc = (
+                                "逐条回应你收到的质询，指出对方质疑中的不当之处，"
+                                "并可修正自己的方案。400-600 字"
+                            )
+                    else:
+                        if rnd == rounds:
+                            task_desc = base_task_desc
+                        else:
+                            task_desc = (
+                                "本轮无人向你提出质询。如有新论点或补充可继续阐发；"
+                                "若你认为本轮无新内容可补充，可简短表示等待本轮，无需强行发言。200-400 字"
+                            )
+                else:
+                    task_desc = base_task_desc
                 sys_prompt = (
                     f"你是「{d['name']}」，风格为「{d['style']}」。第 {rnd} 轮。\n\n"
                     f"任务：{task_desc}{constraints_block}"
@@ -695,10 +743,10 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
                 break
 
         # ── Phase C: 质询（若当前轮在 cross_exam_rounds 中且非最后一轮） ──
-        had_cross_exam_last = False
+        challenged_last = None
         if rnd in cross_exam_rounds and rnd < rounds:
             print(f"\n\n🔍 质询环节 (R{rnd}.5)\n")
-            await run_cross_exam(
+            challenged_set = await run_cross_exam(
                 debaters,
                 log,
                 topic,
@@ -708,7 +756,7 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
                 debate_base_url=debate_base_url,
                 debate_api_key=debate_api_key,
             )
-            had_cross_exam_last = True
+            challenged_last = challenged_set
 
     # ══════════════════════════════════════════════════
     #  裁判总结
@@ -976,7 +1024,7 @@ async def resume(
                 timeout=timeout,
                 debate_base_url=debate_base_url,
                 debate_api_key=debate_api_key,
-            )
+            )  # resume 中不使用返回的 challenged_set，无需处理
 
     if judge_at_end:
         print("\n\n⚖️ 裁判总结\n")
