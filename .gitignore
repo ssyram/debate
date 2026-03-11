@@ -32,6 +32,7 @@ env/
 *.swo
 *~
 Thumbs.db
+.claude
 
 # Pytest / coverage
 .pytest_cache/
