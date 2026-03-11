@@ -9,25 +9,25 @@ debaters:
   - name: "GPT-Grok-Advocate"
     base_url: "http://localhost:8081/v1/chat/completions"
     api_key: "dummy"
-    model: "yunwu/gpt-5.4"
+    model: "yunwu/kimi-k2.5"
     style: "你是 GPT-5 系列和 Grok 3 的坚定支持者。你的任务是为 GPT-5 或 Grok 3 中更强的那个进行辩护，论证它是目前综合最强的 AI 模型。你可以联网搜索最新基准测试、开发者评价和实测报告来支撑论点。"
 
   - name: "Claude-Advocate"
     base_url: "http://localhost:8082/v1/chat/completions"
     api_key: "dummy"
-    model: "yunwu/claude-sonnet-4-6"
+    model: "yunwu/kimi-k2.5"
     style: "你是 Claude 4 系列（Claude Opus 4、Claude Sonnet 4）的坚定支持者。你的任务是论证 Claude 4 是目前综合最强的 AI 模型，尤其在推理、代码、安全性和指令遵循方面。你可以联网搜索最新数据支撑论点。"
 
   - name: "Gemini-DeepSeek-Advocate"
     base_url: "http://localhost:8083/v1/chat/completions"
     api_key: "dummy"
-    model: "yunwu/gpt-5.4"
+    model: "yunwu/kimi-k2.5"
     style: "你是 Gemini 3 系列和 DeepSeek V3/R2 的坚定支持者。你的任务是为 Gemini 3 或 DeepSeek 中更强的那个进行辩护，论证它是目前综合最强的 AI 模型。你可以联网搜索最新数据支撑论点。"
 
 judge:
   base_url: "http://localhost:8084/v1/chat/completions"
   api_key: "dummy"
-  model: "yunwu/claude-sonnet-4-6"
+  model: "yunwu/qwen3.5-397b-a17b"
   max_tokens: 2000
 
 judge_instructions: "根据三位辩手的论据，评估各模型系列的实际综合能力，给出有依据的裁定：哪个模型系列在当前（2025-2026）综合表现最强，理由是什么。"
