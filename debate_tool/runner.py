@@ -108,6 +108,7 @@ def parse_topic_file(path: Path) -> dict:
         "middle_task": front.get(
             "middle_task", "回应其他辩手观点，深化立场，400-600 字"
         ).strip(),
+        "middle_task_optional": bool(front.get("middle_task_optional", False)),
         "final_task": front.get(
             "final_task", "最终轮，给出最终建议，标注优先级，300-500 字"
         ).strip(),
@@ -649,6 +650,8 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
                 _ctx=current_user_ctx,
                 constraints_block=constraints_block,
                 _challenged_last=challenged_last,
+                _middle_task_desc=cfg.get("middle_task", ""),
+                _middle_task_optional=cfg.get("middle_task_optional", False),
             ):
                 debater_base_url = (d.get("base_url", "") or debate_base_url).strip()
                 debater_api_key = (d.get("api_key", "") or debate_api_key).strip()
@@ -657,14 +660,22 @@ async def run(cfg: dict, topic_path: Path, *, cot_length: int | None = None):
                     if d["name"] in _challenged_last:
                         if rnd == rounds:
                             task_desc = (
-                                "逐条回应你收到的质询，指出对方质疑中的不当之处，"
-                                "并可修正自己的方案。\n\n此外，" + base_task_desc
+                                "【优先任务】逐条回应你收到的每一个质询，指出对方质疑中的不当之处，"
+                                "并可修正自己的方案。每条质疑都必须回应，字数紧张时可简短作答。"
+                                "若回应已占用大量篇幅，可省略下方的最终任务。"
+                                "\n\n【最终任务（可选）】" + base_task_desc
                             )
                         else:
-                            task_desc = (
-                                "逐条回应你收到的质询，指出对方质疑中的不当之处，"
-                                "并可修正自己的方案。400-600 字"
+                            base_response = (
+                                "【优先任务】逐条回应你收到的每一个质询，指出对方质疑中的不当之处，"
+                                "并可修正自己的方案。每条质疑都必须回应，字数紧张时可简短作答。"
+                                "若回应已占用大量篇幅，可省略下方的推进任务。"
+                                "\n\n【推进任务（可选）】"
                             )
+                            if _middle_task_optional or not _middle_task_desc:
+                                task_desc = "逐条回应你收到的每一个质询，指出对方质疑中的不当之处，并可修正自己的方案。每条质疑都必须回应，字数紧张时可简短作答。400-600 字"
+                            else:
+                                task_desc = base_response + _middle_task_desc
                     else:
                         if rnd == rounds:
                             task_desc = base_task_desc
