@@ -10,7 +10,7 @@ from queue import Queue, Empty
 
 from flask import Blueprint, Response, jsonify, render_template, request
 
-from debate_tool.runner import parse_topic_file
+from debate_tool.runner import build_log_path, parse_topic_file
 from debate_tool.session import (
     DebateSession,
     DebateEvent,
@@ -151,7 +151,7 @@ def api_resume():
     if not topic_path.exists():
         return jsonify(error=f"File not found: {topic_path}"), 404
 
-    log_path = topic_path.parent / f"{topic_path.stem}_debate_log.md"
+    log_path = build_log_path(topic_path)
     if not log_path.exists():
         return jsonify(error=f"No existing debate log found: {log_path}"), 404
 

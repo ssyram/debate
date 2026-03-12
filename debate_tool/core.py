@@ -5,6 +5,7 @@ Constants, defaults, YAML generation, file I/O.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -347,6 +348,7 @@ _CJK_RANGES = re.compile(
 )
 
 DEFAULT_COMPACT_TRIGGER = 0.8
+DEFAULT_COMPACT_THRESHOLD = 60_000  # token 数超过此值时主动触发 compact
 
 
 def estimate_tokens(text: str) -> int:
@@ -476,17 +478,41 @@ def build_full_compact(
             int(max(len(e["content"]) for e in to_compact) * ratio), 80
         )
 
+    _TAG_DISPLAY = {
+        "summary": "裁判总结",
+        "cross_exam": "质询",
+        "human": "观察者",
+        "meta": "系统变更",
+        "thinking": "思考",
+        "compact_checkpoint": "压缩快照",
+    }
     parts: list[str] = []
     for e in to_compact:
-        tag = (
-            f"[{e['tag'].upper()}] "
-            if e.get("tag") and e["tag"] != "compact_checkpoint"
-            else ""
-        )
+        raw_tag = e.get("tag", "") or ""
+        tag_label = _TAG_DISPLAY.get(raw_tag, "发言")
         content = e["content"]
         if len(content) > chars_per_entry:
             half = chars_per_entry // 2
             content = content[:half] + "\n...(压缩省略)...\n" + content[-half:]
-        parts.append(f"[{e['seq']}] {tag}{e['name']}: {content}")
+        parts.append(f"[{e['seq']}] {e['name']}（{tag_label}）\n{content}")
 
-    return "\n\n".join(parts), kept
+    return "\n\n---\n\n".join(parts), kept
+
+
+def parse_compact_checkpoint(content_str: str) -> dict:
+    """解析 compact_checkpoint entry 的 content 字段。
+
+    新格式：JSON 字符串，包含 {"state": CompactState, "public_view": str}
+    旧格式：纯文本字符串（向后兼容）
+
+    返回 {"state": dict|None, "public_view": str}
+    """
+    try:
+        parsed = json.loads(content_str)
+        if isinstance(parsed, dict) and "public_view" in parsed:
+            return parsed
+        # JSON 但不是新格式，当作旧格式处理
+        return {"state": None, "public_view": content_str}
+    except (json.JSONDecodeError, ValueError):
+        # 旧格式：纯文本
+        return {"state": None, "public_view": content_str}

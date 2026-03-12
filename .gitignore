@@ -42,3 +42,5 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+examples/

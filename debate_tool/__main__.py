@@ -14,10 +14,10 @@
 
 \u793a\u4f8b:
     debate-tool run my_topic.md
-    debate-tool resume my_topic.md --message "\u8bf7\u91cd\u70b9\u8ba8\u8bba\u5b89\u5168\u6027"
-    debate-tool resume my_topic.md --rounds 2 --cross-exam
-    debate-tool compact my_log.md --compress ALL
-    debate-tool compact my_log.md --compress -2
+    debate-tool resume my_topic_debate_log.json my_topic.md --message "\u8bf7\u91cd\u70b9\u8ba8\u8bba\u5b89\u5168\u6027"
+    debate-tool resume my_topic_debate_log.json my_topic.md --rounds 2 --cross-exam
+    debate-tool compact my_log.json --compress ALL
+    debate-tool compact my_log.json --compress -2
     debate-tool modify my_topic.md --set debater.A.model=gpt-5
     debate-tool modify my_topic.md --add "C|kimi-k2.5|\u6fc0\u8fdb\u6d3e\u98ce\u683c" --reason "\u589e\u52a0\u65b0\u8fa9\u624b"
     debate-tool modify my_topic.md --drop B --force
@@ -41,7 +41,13 @@ def _handle_resume(argv):
     parser = argparse.ArgumentParser(
         description="续跑辩论 — 在已有日志基础上追加轮次",
     )
-    parser.add_argument("topic", type=Path, help="议题 Markdown 文件")
+    parser.add_argument(
+        "files",
+        type=Path,
+        nargs=2,
+        metavar=("FILE_A", "FILE_B"),
+        help="日志文件和 topic 文件（顺序任意，自动识别）",
+    )
     parser.add_argument(
         "--message", "-m", type=str, default="", help="注入观察者消息（问题/意见/指导）"
     )
@@ -73,20 +79,36 @@ def _handle_resume(argv):
         metavar="LENGTH",
         help="为辩手启用思考空间 (CoT)。LENGTH 为可选思考 token 预算，省略则不限制。",
     )
+    parser.add_argument(
+        "--debug",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="DEBUG_LOG",
+        help="开启 debug 日志：省略文件名则输出到控制台，指定文件名则写入文件（10MB 轮转）",
+    )
     args = parser.parse_args(argv)
 
-    topic_path = args.topic.resolve()
-    if not topic_path.exists():
-        print(f"❌ 文件不存在: {topic_path}", file=sys.stderr)
-        sys.exit(1)
+    file_a, file_b = args.files[0].resolve(), args.files[1].resolve()
+    for p in (file_a, file_b):
+        if not p.exists():
+            print(f"❌ 文件不存在: {p}", file=sys.stderr)
+            sys.exit(1)
 
-    from debate_tool.runner import parse_topic_file, resume
+    from debate_tool.runner import identify_files, parse_topic_file, resume, init_debug_logging
 
+    if args.debug is not None:
+        init_debug_logging(args.debug)
+        if args.debug is not True:
+            print(f"  🐛 Debug 日志 → {args.debug}", file=sys.stderr)
+
+    log_path, topic_path = identify_files(file_a, file_b)
     cfg = parse_topic_file(topic_path)
     asyncio.run(
         resume(
             cfg,
             topic_path,
+            log_path=log_path,
             message=args.message,
             extra_rounds=args.rounds,
             cross_exam=args.cross_exam,
@@ -105,14 +127,14 @@ def _handle_compact(argv):
     parser = argparse.ArgumentParser(
         description="手动压缩辩论日志 — 生成 checkpoint 写入日志",
     )
-    parser.add_argument("log", type=Path, help="辩论日志文件 (*_debate_log.md)")
+    parser.add_argument("log", type=Path, help="辩论日志文件 (*_debate_log.json)")
     parser.add_argument(
         "--compress",
         "-c",
         type=str,
         default="ALL",
         help=(
-            "压缩范围: "
+            "压缩范围（向后兼容参数，新版 LLM 压缩忽略此参数）: "
             "ALL=全部压缩(默认), "
             "N(正数)=从后往前压缩N条, "
             "-N(负数)=保留最后N条其余全压"
@@ -122,7 +144,21 @@ def _handle_compact(argv):
         "--token-budget",
         type=int,
         default=60000,
-        help="checkpoint 的 token 预算 (默认 60000)",
+        help="checkpoint 的 token 预算（向后兼容参数，新版 LLM 压缩忽略此参数，默认 60000）",
+    )
+    parser.add_argument(
+        "--topic",
+        type=Path,
+        default=None,
+        metavar="TOPIC_FILE",
+        help="议题 Markdown 文件（含 compact_model 等配置）；不提供时自动在日志同目录查找",
+    )
+    parser.add_argument(
+        "--debug",
+        nargs="?",
+        const=True,
+        metavar="DEBUG_LOG",
+        help="开启 debug 日志，可选文件路径",
     )
     args = parser.parse_args(argv)
 
@@ -131,22 +167,14 @@ def _handle_compact(argv):
         print(f"❌ 文件不存在: {log_path}", file=sys.stderr)
         sys.exit(1)
 
-    from debate_tool.runner import compact_log, Log
+    topic_path = args.topic.resolve() if args.topic else None
 
-    log = Log.load_from_file(log_path)
-    total = len(log.entries)
+    from debate_tool.runner import compact_log
+    from debate_tool.runner import init_debug_logging
+    debug_target = args.debug if hasattr(args, 'debug') and args.debug is not None else None
+    init_debug_logging(debug_target)
 
-    compress_val = args.compress.strip()
-    if compress_val.upper() == "ALL":
-        keep_last = 0
-    else:
-        n = int(compress_val)
-        if n >= 0:
-            keep_last = max(total - n, 0)
-        else:
-            keep_last = abs(n)
-
-    compact_log(log_path, keep_last=keep_last, token_budget=args.token_budget)
+    compact_log(log_path, keep_last=0, token_budget=args.token_budget, topic_path=topic_path)
 
 
 def _handle_modify(argv):

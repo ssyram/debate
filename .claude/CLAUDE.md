@@ -37,6 +37,15 @@ This is the debate-tool project — a multi-model debate framework.
 - API config: topic files must use `${DEBATE_BASE_URL}` / `${DEBATE_API_KEY}` placeholders for base_url and api_key; real values are injected via environment variables or `.env`; hard-coding is not allowed
 - Commits: Never commit on your own initiative; only commit when the user explicitly instructs it
 
+## Compact Design Principles
+
+Compact（上下文压缩）的设计精神：
+
+- **理想目标**：compact 后辩手表现应等同甚至超越不压缩——去掉噪音后注意力更集中。好的 compact 是「重组信息使其比原始对话更高效传达辩论状态」，不只是「token 限制下尽量少丢」
+- **LLM 摘要**：compact 通过 LLM 调用生成结构化摘要，不做纯文本截断
+- **核心维度**（参考框架）：思路延续（辩手能接上最新线索继续推进）+ 不回滚打转（不重新提出已否决观点）
+- **输出应体现**：辩论演进轨迹、最新决策和立场、被抛弃路径及理由
+
 ## Debate Standard Workflow
 
 **辩论完整标准流程（Debate Standard Workflow）**：

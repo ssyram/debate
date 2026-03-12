@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from debate_tool.core import DEFAULT_EARLY_STOP_THRESHOLD, check_convergence
-from debate_tool.runner import call_llm, run_cross_exam, Log
+from debate_tool.runner import build_log_path, call_llm, run_cross_exam, Log
 
 
 # ---------------------------------------------------------------------------
@@ -113,10 +113,10 @@ class EventLog(Log):
             except Exception:
                 pass  # Don't let callback errors break the debate
 
-    def add(self, name: str, content: str, tag: str = "") -> None:
+    def add(self, name: str, content: str, tag: str = "", flush: bool = True) -> None:
         """Override: add entry and emit LOG_ENTRY event."""
         e = {
-            "seq": len(self.entries) + 1,
+            "seq": self._next_seq(),
             "ts": datetime.now().isoformat(),
             "tag": tag,
             "name": name,
@@ -131,7 +131,8 @@ class EventLog(Log):
         print(f"\n{'=' * 60}\n[{e['seq']}] {icon} {name}\n{'=' * 60}")
         t = content
         print(t[:800] + "\n...(\u89c1\u65e5\u5fd7)" if len(t) > 800 else t)
-        self._flush()
+        if flush:
+            self._flush()
 
         self._emit(
             DebateEvent(
@@ -206,7 +207,7 @@ class DebateSession:
         # Build output paths
         stem = topic_path.stem
         out_dir = topic_path.parent
-        self.log = EventLog(out_dir / f"{stem}_debate_log.md", cfg["title"])
+        self.log = EventLog(build_log_path(topic_path), cfg["title"])
         self.summary_path = out_dir / f"{stem}_debate_summary.md"
 
         # Wire log events to session events

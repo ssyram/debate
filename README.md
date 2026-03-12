@@ -92,27 +92,42 @@ debate-tool run my_topic.md --cross-exam --early-stop
 ### 续跑与压缩
 
 ```bash
-# 续跑 1 轮（追加到同一日志）
-debate-tool resume my_topic.md
+# 续跑 1 轮（传入日志文件 + topic 文件，顺序任意）
+debate-tool resume my_topic_debate_log.json my_topic.md
 
 # 续跑 2 轮 + 注入观察者意见
-debate-tool resume my_topic.md --rounds 2 --message "请重点讨论安全性"
+debate-tool resume my_topic_debate_log.json my_topic.md --rounds 2 --message "请重点讨论安全性"
 
 # 续跑时启用质询
-debate-tool resume my_topic.md --rounds 1 --cross-exam
+debate-tool resume my_topic_debate_log.json my_topic.md --rounds 1 --cross-exam
 
 # 续跑后不执行裁判总结
-debate-tool resume my_topic.md --no-judge
+debate-tool resume my_topic_debate_log.json my_topic.md --no-judge
+
+# 跳过话题一致性检查（如果日志和 topic 来自不同话题）
+debate-tool resume my_topic_debate_log.json different_topic.md --force
 
 # 手动压缩日志（全部压缩，生成 checkpoint）
-debate-tool compact my_topic_debate_log.md --compress ALL
+debate-tool compact my_topic_debate_log.json --compress ALL
 
 # 保留最后 2 条，其余压缩
-debate-tool compact my_topic_debate_log.md --compress -2
+debate-tool compact my_topic_debate_log.json --compress -2
 
 # 从后往前压缩最多 5 条
-debate-tool compact my_topic_debate_log.md --compress 5
+debate-tool compact my_topic_debate_log.json --compress 5
 ```
+
+**话题一致性检查**
+
+`resume` 命令会自动使用轻量级 LLM（默认 `gpt-5-nano`，fallback 到第一辩手的模型）验证日志和 topic 文件是否来自同一辩题：
+
+- ✅ 一致时，正常继续续跑，输出使用的模型名称
+- ⚠️ 不一致时，显示 LLM 的详细 reasoning（解释为什么不匹配）并拒绝继续，用户可用 `--force` 标志跳过检查：
+  ```bash
+  debate-tool resume my_log.json wrong_topic.md --force
+  ```
+- 🔄 模型可用性：如果指定模型不可用，自动 fallback 到第一辩手的模型（保证检查总能执行）
+- 如果 LLM 调用失败（所有模型均无可用），只打印警告但不中断操作
 
 ### 修改配置
 
@@ -133,7 +148,22 @@ debate-tool modify my_topic.md --drop 旧辩手 --force
 debate-tool modify my_topic.md --pivot "甲|全新立场描述" --reason "第二阶段讨论转向"
 ```
 
-> 所有 `resume` / `compact` / `modify` 操作均追加到同一 `*_debate_log.md`，原始历史完整保留。
+> 所有 `resume` / `compact` / `modify` 操作均追加到同一 `*_debate_log.json`，原始历史完整保留。
+
+> 日志格式转换脚本（双向）：
+
+```bash
+# 旧版 Markdown 日志 -> JSON（用于 resume/compact/modify）
+python scripts/convert_md_log_to_json.py old_debate_log.md
+
+# JSON 日志 -> Markdown（用于阅读）
+python scripts/convert_json_log_to_md.py my_topic_debate_log.json
+
+# 直接输出到终端，方便先转换再作为自然语言阅读
+python scripts/convert_json_log_to_md.py my_topic_debate_log.json --stdout
+```
+
+> 主工具本身只接受 JSON 日志；Markdown 主要用于阅读或历史迁移。
 
 ### 生成辩手立场
 
@@ -145,8 +175,9 @@ debate-tool stance my_topic.md --num 5 --format yaml
 > 所有命令也可通过 `python -m debate_tool <command>` 调用。
 
 **输出文件**：
-- `{stem}_debate_log.md` — 完整辩论记录（每轮每位辩手发言）
+- `{stem}_debate_log.json` — 完整辩论记录（JSON 持久化）
 - `{stem}_debate_summary.md` — 裁判结构化裁决
+- `{stem}_debate_log.md` — 可读版日志（由 `scripts/convert_json_log_to_md.py` 手动生成）
 
 ## 3. API 配置
 

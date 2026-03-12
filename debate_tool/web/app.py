@@ -346,6 +346,9 @@ def create_app() -> Flask:
     def api_execute_resume():
         """Execute debate resume command via subprocess."""
         import subprocess
+        import sys
+
+        from debate_tool.runner import build_log_path
 
         data = request.get_json(silent=True) or {}
         topic_file = data.get("topic_file", "").strip()
@@ -357,12 +360,15 @@ def create_app() -> Flask:
             return jsonify(error="话题文件不能为空"), 400
 
         try:
+            topic_path = Path(topic_file).resolve()
+            log_path = build_log_path(topic_path)
             cmd = [
-                "python",
+                sys.executable,
                 "-m",
                 "debate_tool",
                 "resume",
-                topic_file,
+                str(log_path),
+                str(topic_path),
                 "--rounds",
                 str(rounds),
             ]
@@ -388,6 +394,7 @@ def create_app() -> Flask:
     def api_execute_compact():
         """Execute log compact command via subprocess."""
         import subprocess
+        import sys
 
         data = request.get_json(silent=True) or {}
         log_file = data.get("log_file", "").strip()
@@ -398,7 +405,7 @@ def create_app() -> Flask:
 
         try:
             cmd = [
-                "python",
+                sys.executable,
                 "-m",
                 "debate_tool",
                 "compact",
@@ -522,7 +529,7 @@ def create_app() -> Flask:
         cwd = Path.cwd()
         kind = request.args.get("kind", "topic")
         if kind == "log":
-            pattern = "*_debate_log.md"
+            pattern = "*_debate_log.json"
         else:
             pattern = "*.md"
         files = sorted(g.glob(str(cwd / pattern)))
@@ -530,7 +537,7 @@ def create_app() -> Flask:
             files = [
                 f
                 for f in files
-                if not f.endswith("_debate_log.md")
+                if not f.endswith("_debate_log.json")
                 and not f.endswith("_debate_summary.md")
             ]
         return jsonify(files=[{"path": f, "name": Path(f).name} for f in files])
