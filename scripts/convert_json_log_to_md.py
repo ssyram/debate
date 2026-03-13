@@ -17,6 +17,52 @@ from debate_tool.runner import LOG_FILE_SUFFIX, LOG_FORMAT, LOG_VERSION
 LEGACY_LOG_FILE_SUFFIX = "_debate_log.md"
 
 
+def _render_compact_state(state: dict) -> str:
+    if not state:
+        return "（无 state 数据）"
+    lines = []
+    topic = state.get("topic", {})
+    if topic:
+        lines.append(f"### 议题\n{topic.get('current_formulation', '')}")
+        if topic.get("notes"):
+            lines.append(f"> {topic['notes']}")
+    axioms = state.get("axioms", [])
+    if axioms:
+        lines.append("### 共识（Axioms）")
+        for a in axioms:
+            lines.append(f"- {a}")
+    disputes = state.get("disputes", [])
+    if disputes:
+        lines.append("### 争点（Disputes）")
+        for d in disputes:
+            lines.append(f"**[{d['id']}] {d['title']}**（{d['status']}）")
+            for name, pos in d.get("positions", {}).items():
+                lines.append(f"- {name}：{pos}")
+    pruned = state.get("pruned_paths", [])
+    if pruned:
+        lines.append("### 已否决路径（Pruned Paths）")
+        for p in pruned:
+            lines.append(f"- [{p['id']}] {p['description']} → {p['reason']}")
+    participants = state.get("participants", [])
+    if participants:
+        lines.append("### 辩手立场快照（Participants）")
+        for p in participants:
+            lines.append(f"#### {p['name']}（v{p.get('stance_version', '?')}）")
+            if p.get("stance"):
+                lines.append(p["stance"])
+            claims = p.get("core_claims", [])
+            if claims:
+                lines.append("**核心主张：**")
+                for c in claims:
+                    lines.append(f"- [{c['id']}]（{c['status']}）{c['text']}")
+            abandoned = p.get("abandoned_claims", [])
+            if abandoned:
+                lines.append("**已放弃：**")
+                for a in abandoned:
+                    lines.append(f"- ~~{a.get('original_text', a.get('text', ''))}~~ → {a.get('reason', '')}")
+    return "\n\n".join(lines)
+
+
 def _normalize_entries(entries: object, path: Path) -> list[dict]:
     if not isinstance(entries, list):
         raise ValueError(f"{path} 的 entries 字段必须是数组")
@@ -43,15 +89,16 @@ def _normalize_entries(entries: object, path: Path) -> list[dict]:
         if not isinstance(content, str):
             raise ValueError(f"{path} 的 entries[{idx}] content 非法")
 
-        normalized.append(
-            {
-                "seq": seq,
-                "ts": ts,
-                "tag": tag,
-                "name": name,
-                "content": content,
-            }
-        )
+        normalized_entry: dict = {
+            "seq": seq,
+            "ts": ts,
+            "tag": tag,
+            "name": name,
+            "content": content,
+        }
+        if "state" in entry:
+            normalized_entry["state"] = entry["state"]
+        normalized.append(normalized_entry)
 
     return normalized
 
@@ -114,6 +161,10 @@ def _render_markdown(payload: dict, entries: list[dict]) -> str:
 
     for entry in entries:
         header = _render_entry_header(entry["name"], entry.get("tag", ""))
+        tag = entry.get("tag", "")
+        content = entry["content"]
+        if tag == "compact_checkpoint" and not content:
+            content = _render_compact_state(entry.get("state", {}))
         lines.extend(
             [
                 "",
@@ -121,7 +172,7 @@ def _render_markdown(payload: dict, entries: list[dict]) -> str:
                 "",
                 f"*{entry['ts']}*",
                 "",
-                entry["content"],
+                content,
                 "",
                 "---",
                 "",

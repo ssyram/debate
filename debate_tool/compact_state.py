@@ -384,7 +384,7 @@ _PHASE_B_OUTPUT_SCHEMA = """\
 {
   "name": "<辩手名称（string）>",
   "stance_version": <版本号，整数，每次更新加1>,
-  "stance": "<一段文字，记录当前最新立场和论点演进，不限于一句，在上一版本基础上增量更新（string）>",
+  "stance": "<以基底文本（initial_style 或上一版本 stance）为起点，对原文做最小精化：参考 core_claims/key_arguments/abandoned_claims 的变化，只修改确实改变的部分；若立场无实质变化则与基底高度相似；不要压缩成一句话，保留原始风格和语气（string）>",
   "core_claims": [
     {
       "id": "<主张ID，如 A1>",
@@ -418,7 +418,7 @@ _PHASE_B_SYSTEM_TEMPLATE = """\
 - 只更新确实在辩论过程中发生了变化的部分。
 - 不要因对方的攻击就轻易改变立场；只有辩手本人明确承认或裁判裁定时，才标记为 abandoned 或 weakened/refuted。
 - stance_version 每次更新时加 1。
-- stance 字段：在上一版本 stance 的基础上做**增量更新**——增加新发现、删除已被推翻的论点、修改被质疑的表述。**不要从头重写**，保持立场核心不变。
+- stance 字段：这不是新生成的摘要，而是对基底文本（initial_style 或上一版本 stance）的最小精化版本。以基底文本的原文为起点，只做必要的修改：参考 core_claims 中 active/abandoned 的变化、key_arguments 中 status 的变化、abandoned_claims 中明确放弃的主张。修改量应尽量小：如果辩论中立场没有实质变化，stance 应与基底文本高度相似。**不要压缩成一句话；保留原始风格和语气；只精化，不改写**。
 - 输出严格 JSON，不附加任何解释文字。"""
 
 
@@ -447,9 +447,9 @@ def build_phase_b_prompt(
     user_parts.append(initial_style.strip() if initial_style else "（未提供）")
     user_parts.append("")
 
-    # 上一版本立场笔记（增量更新基础）
-    user_parts.append("## 上一版本立场笔记（在此基础上增量更新）")
-    user_parts.append(prev_stance if prev_stance else initial_style)
+    # stance 基底文本：上一次的 stance 优先；首次则用 initial_style
+    user_parts.append("## stance 的基底文本（以此为起点做最小修改，不要重新生成摘要）")
+    user_parts.append(prev_stance if prev_stance else (initial_style.strip() if initial_style else "（未提供）"))
     user_parts.append("")
 
     # 辩论增量记录（全部，不过滤）
@@ -469,6 +469,12 @@ def build_phase_b_prompt(
     user_parts.append("```json")
     user_parts.append(_PHASE_B_OUTPUT_SCHEMA)
     user_parts.append("```")
+    user_parts.append("")
+    user_parts.append(
+        "特别说明（stance 字段）：上方「stance 的基底文本」就是你的写作起点。"
+        "以该原文为基础，只对辩论中确实发生变化的部分做最小修改；"
+        "若立场无实质变化，stance 应与基底文本高度相似，不要重新概括或压缩。"
+    )
 
     user = "\n".join(user_parts)
     return system, user
@@ -635,7 +641,7 @@ def format_delta_entries_text(entries: list[dict]) -> str:
 
     for entry in entries:
         tag = entry.get("tag", "")
-        if tag == "thinking":
+        if tag in ("thinking", "summary", "compact_checkpoint"):
             continue
 
         seq = entry.get("seq", "?")

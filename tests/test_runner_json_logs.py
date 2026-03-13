@@ -25,6 +25,7 @@ from debate_tool.runner import (
     identify_files,
     parse_topic_file,
     resume,
+    run_cross_exam,
     run,
 )
 from debate_tool.__main__ import main as cli_main
@@ -154,6 +155,179 @@ class CrossExamParsingTests(unittest.TestCase):
             debater_names=["Linus Torvalds", "Ssyram", "康德（Immanuel Kant）"],
         )
         self.assertIsNone(target)
+
+
+class CrossExamFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_run_cross_exam_collects_all_questions_before_logging(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Log(Path(tmp) / "cross_exam_log.json", "同步质询")
+            log.add("Linus", "Linus round speech", flush=False)
+            log.add("Ssyram", "Ssyram round speech", flush=False)
+            log.add("Kant", "Kant round speech", flush=False)
+            log._flush()
+
+            debaters = [
+                {"name": "Linus", "style": "style-a", "model": "m1"},
+                {"name": "Ssyram", "style": "style-b", "model": "m2"},
+                {"name": "Kant", "style": "style-c", "model": "m3"},
+            ]
+
+            observed_cross_exam_counts: list[int] = []
+
+            async def fake_call_llm(model, system, user_content, **kwargs):
+                observed_cross_exam_counts.append(
+                    len([e for e in log.entries if e.get("tag") == "cross_exam"])
+                )
+                payload = json.loads(user_content) if user_content.strip().startswith("{") else {}
+                questioner = payload.get("questioner", {}).get("name", "")
+                target_map = {
+                    "Linus": "Ssyram",
+                    "Ssyram": "Kant",
+                    "Kant": "Linus",
+                }
+                target = target_map[questioner]
+                if "你的任务是先选择一个要质询的对象" in system:
+                    return json.dumps({"target": target}, ensure_ascii=False)
+                return json.dumps(
+                    {
+                        "target": target,
+                        "reason": f"质询 {target}",
+                        "questions": [f"{target} q1", f"{target} q2"],
+                    },
+                    ensure_ascii=False,
+                )
+
+            with patch("debate_tool.runner.call_llm", side_effect=fake_call_llm):
+                challenged = await run_cross_exam(
+                    debaters,
+                    log,
+                    "topic",
+                    1,
+                    max_reply_tokens=300,
+                    timeout=30,
+                    debate_base_url="http://example.invalid/v1/chat/completions",
+                    debate_api_key="test-key",
+                )
+
+            self.assertEqual(len(observed_cross_exam_counts), 6)
+            self.assertTrue(all(count == 0 for count in observed_cross_exam_counts))
+            self.assertEqual(challenged, {"Ssyram", "Kant", "Linus"})
+            self.assertEqual(len([e for e in log.entries if e.get("tag") == "cross_exam"]), 3)
+
+    async def test_run_cross_exam_repairs_non_json_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Log(Path(tmp) / "cross_exam_repair_log.json", "质询修复")
+            log.add("Linus", "Linus round speech", flush=False)
+            log.add("Ssyram", "Ssyram round speech", flush=False)
+            log.add("Kant", "Kant round speech", flush=False)
+            log._flush()
+
+            debaters = [
+                {"name": "Linus", "style": "style-a", "model": "m1"},
+                {"name": "Ssyram", "style": "style-b", "model": "m2"},
+                {"name": "Kant", "style": "style-c", "model": "m3"},
+            ]
+
+            calls: list[tuple[str, str]] = []
+
+            async def fake_call_llm(model, system, user_content, **kwargs):
+                calls.append((model, system))
+                payload = json.loads(user_content) if user_content.strip().startswith("{") else None
+                questioner = payload["questioner"]["name"] if payload else "Ssyram"
+                target_map = {
+                    "Linus": "Ssyram",
+                    "Ssyram": "Kant",
+                    "Kant": "Linus",
+                }
+                target = target_map[questioner]
+
+                if "你的任务是先选择一个要质询的对象" in system:
+                    return json.dumps({"target": target}, ensure_ascii=False)
+
+                if model == "m2" and "现在必须只输出一个 JSON 对象" not in system:
+                    return "我先讲一下总体立场和路线图，暂不按 JSON 输出。"
+
+                return json.dumps(
+                    {
+                        "target": target,
+                        "reason": f"质询 {target}",
+                        "questions": [f"{target} q1", f"{target} q2"],
+                    },
+                    ensure_ascii=False,
+                )
+
+            with patch("debate_tool.runner.call_llm", side_effect=fake_call_llm):
+                challenged = await run_cross_exam(
+                    debaters,
+                    log,
+                    "topic",
+                    1,
+                    max_reply_tokens=300,
+                    timeout=30,
+                    debate_base_url="http://example.invalid/v1/chat/completions",
+                    debate_api_key="test-key",
+                )
+
+            self.assertEqual(challenged, {"Ssyram", "Kant", "Linus"})
+            cross_exam_entries = [e for e in log.entries if e.get("tag") == "cross_exam"]
+            self.assertEqual(len(cross_exam_entries), 3)
+            self.assertFalse(any("(未解析)" in e["name"] for e in cross_exam_entries))
+            self.assertTrue(any("现在必须只输出一个 JSON 对象" in system for _, system in calls))
+
+    async def test_run_cross_exam_logs_no_opinion_when_target_invalid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Log(Path(tmp) / "cross_exam_no_opinion_log.json", "质询无意见")
+            log.add("Linus", "Linus round speech", flush=False)
+            log.add("Ssyram", "Ssyram round speech", flush=False)
+            log.add("Kant", "Kant round speech", flush=False)
+            log._flush()
+
+            debaters = [
+                {"name": "Linus", "style": "style-a", "model": "m1"},
+                {"name": "Ssyram", "style": "style-b", "model": "m2"},
+                {"name": "Kant", "style": "style-c", "model": "m3"},
+            ]
+
+            async def fake_call_llm(model, system, user_content, **kwargs):
+                payload = json.loads(user_content) if user_content.strip().startswith("{") else None
+                questioner = payload["questioner"]["name"] if payload else ""
+                if "你的任务是先选择一个要质询的对象" in system and questioner == "Ssyram":
+                    return "我想质询所有人"
+                if "现在必须只输出一个 JSON 对象" in system and questioner == "Ssyram":
+                    return "还是不按 JSON"
+
+                target_map = {
+                    "Linus": "Ssyram",
+                    "Ssyram": "Kant",
+                    "Kant": "Linus",
+                }
+                target = target_map.get(questioner, "Ssyram")
+                if "你的任务是先选择一个要质询的对象" in system:
+                    return json.dumps({"target": target}, ensure_ascii=False)
+                return json.dumps(
+                    {
+                        "target": target,
+                        "reason": f"质询 {target}",
+                        "questions": [f"{target} q1", f"{target} q2"],
+                    },
+                    ensure_ascii=False,
+                )
+
+            with patch("debate_tool.runner.call_llm", side_effect=fake_call_llm):
+                challenged = await run_cross_exam(
+                    debaters,
+                    log,
+                    "topic",
+                    1,
+                    max_reply_tokens=300,
+                    timeout=30,
+                    debate_base_url="http://example.invalid/v1/chat/completions",
+                    debate_api_key="test-key",
+                )
+
+            self.assertEqual(challenged, {"Ssyram", "Linus"})
+            entries = [e for e in log.entries if e.get("tag") == "cross_exam"]
+            self.assertTrue(any(e["name"] == "Ssyram → (本轮没有意见)" for e in entries))
 
 
 class IdentifyFilesTests(unittest.TestCase):
