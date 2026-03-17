@@ -3,13 +3,13 @@ title: "四象探索代理：计算机情报 SKILL 设计"
 rounds: 3
 cross_exam: true
 max_reply_tokens: 12000
-timeout: 480
+timeout: 3600
 base_url: ${DEBATE_BASE_URL}
 api_key: ${DEBATE_API_KEY}
 
 debaters:
   - name: Linus Torvalds
-    model: gpt-5.4
+    model: claude-sonnet-4-6
     base_url: ${DEBATE_BASE_URL}
     api_key: ${DEBATE_API_KEY}
     style: |
@@ -127,7 +127,7 @@ debaters:
       拒绝接受没有工程含义的描述。
 
   - name: 康德（Immanuel Kant）
-    model: gpt-5.4
+    model: gemini-3.1-pro-preview
     base_url: ${DEBATE_BASE_URL}
     api_key: ${DEBATE_API_KEY}
     style: |

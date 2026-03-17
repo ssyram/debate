@@ -4,7 +4,7 @@
 
 提供 Web UI 和命令行两种使用方式：
 - **Web UI** — 统一单页应用，内含辩论配置向导 + 实时查看器，支持从界面创建并启动辩论
-- **命令行** — `debate-tool run/resume/compact/modify` 直接驱动辩论引擎
+- **命令行** — `debate-tool run/resume/compact` 直接驱动辩论引擎
 
 ## 1. 安装
 
@@ -87,22 +87,37 @@ debate-tool run my_topic.md --early-stop 0.6
 
 # 质询 + 早停
 debate-tool run my_topic.md --cross-exam --early-stop
+
+# 启用 Chain-of-Thought（辩手先思考再发言，思考内容记入 log 但不传给对方）
+debate-tool run my_topic.md --cot
+
+# 指定 CoT 最大 token 数
+debate-tool run my_topic.md --cot 2000
 ```
 
 ### 续跑与压缩
 
 ```bash
-# 续跑 1 轮（传入日志文件 + topic 文件，顺序任意）
-debate-tool resume my_topic_debate_log.json my_topic.md
+# 简单续跑 1 轮（第一个参数：日志文件 .json，必填）
+debate-tool resume my_topic_debate_log.json --rounds 1
+
+# 使用 Resume Topic 文件（第二个参数：.md，可选，用于批量覆盖配置）
+debate-tool resume my_topic_debate_log.json phase2.md
 
 # 续跑 2 轮 + 注入观察者意见
-debate-tool resume my_topic_debate_log.json my_topic.md --rounds 2 --message "请重点讨论安全性"
+debate-tool resume my_topic_debate_log.json --rounds 2 --message "请重点讨论安全性"
 
 # 续跑时启用质询
-debate-tool resume my_topic_debate_log.json my_topic.md --rounds 1 --cross-exam
+debate-tool resume my_topic_debate_log.json --rounds 1 --cross-exam
 
-# 续跑后不执行裁判总结
-debate-tool resume my_topic_debate_log.json my_topic.md --no-judge
+# 只触发 judge，不追加辩论（rounds=0）
+debate-tool resume my_topic_debate_log.json --rounds 0
+
+# 变更辩手组成（add/drop）须通过 Resume Topic 文件 + --force（防止误操作）
+debate-tool resume my_topic_debate_log.json phase2.md --force
+
+# 轻量级指引（不写入 log，仅影响本次续跑的每轮任务描述）
+debate-tool resume my_topic_debate_log.json --rounds 1 --guide "聚焦幕府财政危机的根本原因"
 
 # 跳过话题一致性检查（如果日志和 topic 来自不同话题）
 debate-tool resume my_topic_debate_log.json different_topic.md --force
@@ -117,43 +132,19 @@ debate-tool compact my_topic_debate_log.json --compress -2
 debate-tool compact my_topic_debate_log.json --compress 5
 ```
 
-**话题一致性检查**
+**Resume Topic 文件**
 
-`resume` 命令会自动使用轻量级 LLM（默认 `gpt-5-nano`，fallback 到第一辩手的模型）验证日志和 topic 文件是否来自同一辩题：
+Resume Topic 文件（.md）支持增量覆盖配置，覆盖内容记入 log 并持久累积：
 
-- ✅ 一致时，正常继续续跑，输出使用的模型名称
-- ⚠️ 不一致时，显示 LLM 的详细 reasoning（解释为什么不匹配）并拒绝继续，用户可用 `--force` 标志跳过检查：
-  ```bash
-  debate-tool resume my_log.json wrong_topic.md --force
-  ```
-- 🔄 模型可用性：如果指定模型不可用，自动 fallback 到第一辩手的模型（保证检查总能执行）
-- 如果 LLM 调用失败（所有模型均无可用），只打印警告但不中断操作
+- **YAML front-matter**：增量覆盖字段（`middle_task`, `final_task`, `constraints`, `judge_instructions`, `add_debaters`, `drop_debaters`, `judge`, `cross_exam`, `max_reply_tokens`, `cot` 等）；`add_debaters`/`drop_debaters` 需配合 `--force` 使用
+- **Markdown body**：观察者消息（等同于 `--message`）
 
-### 修改配置
-
-```bash
-# 修改辩手模型
-debate-tool modify my_topic.md --set debater.甲.model=gpt-5
-
-# 修改全局字段
-debate-tool modify my_topic.md --set rounds=4 --set max_reply_tokens=2000
-
-# 添加辩手
-debate-tool modify my_topic.md --add "新辩手|gpt-4o-mini|批判派风格"
-
-# 移除辩手（--force 跳过 log 一致性警告）
-debate-tool modify my_topic.md --drop 旧辩手 --force
-
-# 扬弃立场（修改辩手 style，历史发言不变）
-debate-tool modify my_topic.md --pivot "甲|全新立场描述" --reason "第二阶段讨论转向"
-```
-
-> 所有 `resume` / `compact` / `modify` 操作均追加到同一 `*_debate_log.json`，原始历史完整保留。
+> 所有 `resume` / `compact` 操作均追加到同一 `*_debate_log.json`，原始历史完整保留。
 
 > 日志格式转换脚本（双向）：
 
 ```bash
-# 旧版 Markdown 日志 -> JSON（用于 resume/compact/modify）
+# 旧版 Markdown 日志 -> JSON（用于 resume/compact）
 python scripts/convert_md_log_to_json.py old_debate_log.md
 
 # JSON 日志 -> Markdown（用于阅读）
@@ -164,13 +155,6 @@ python scripts/convert_json_log_to_md.py my_topic_debate_log.json --stdout
 ```
 
 > 主工具本身只接受 JSON 日志；Markdown 主要用于阅读或历史迁移。
-
-### 生成辩手立场
-
-```bash
-debate-tool stance my_topic.md
-debate-tool stance my_topic.md --num 5 --format yaml
-```
 
 > 所有命令也可通过 `python -m debate_tool <command>` 调用。
 
@@ -203,7 +187,6 @@ export DEFAULT_DEBATE_MODELS="gpt-5.2,kimi-k2.5,MiniMax-M2.5"
 ```
 
 - 未设置时默认全部使用 `gpt-5.2`
-- 立场生成器生成的辩手立场将自动按此列表循环分配模型，不再由 LLM 推荐
 
 ## 4. YAML 字段参考
 
@@ -290,30 +273,7 @@ early_stop: 0.7        # 自定义阈值 70%
 
 可与 `--cross-exam` 组合使用。
 
-## 5. 立场生成器
-
-`stance` 子命令是独立的 LLM 驱动立场生成器，根据议题自动推荐辩手立场。辩手模型由环境变量 `DEFAULT_DEBATE_MODELS` 循环分配，不再由 LLM 推荐。
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `topic` | 话题 `.md` 文件路径（必填） | — |
-| `--model MODEL` | 分析议题所用 LLM | `gpt-5.2` |
-| `--num N` | 辩手数量 | 3 |
-| `--prompt TEXT` | 附加生成指令 | — |
-| `--format json\|yaml` | 输出格式 | `json` |
-| `--base-url URL` | API 端点 | — |
-| `--api-key KEY` | API 密钥 | — |
-
-### Library API
-
-```python
-from debate_tool.stance import generate_stances_sync, format_stances_json
-
-result = generate_stances_sync(topic_body, num_debaters=3)
-print(format_stances_json(result))
-```
-
-## 6. 文件结构
+## 5. 文件结构
 
 ```
 debate-tool/
@@ -326,11 +286,10 @@ debate-tool/
 │   └── web.txt
 └── debate_tool/
     ├── __init__.py        # 版本
-    ├── __main__.py        # 统一入口路由（run / resume / compact / modify / live / stance）
+    ├── __main__.py        # 统一入口路由（run / resume / compact / live）
     ├── runner.py          # 辩论运行器（核心引擎）
     ├── session.py         # DebateSession（Web live 用，通过 subprocess 调用 CLI）
     ├── core.py            # 纯逻辑：默认值、YAML 生成、文件 I/O
-    ├── stance.py          # 立场生成器（可独立使用）
     └── web/
         ├── __init__.py
         ├── __main__.py    # Web 入口

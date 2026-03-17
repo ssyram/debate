@@ -138,6 +138,7 @@ def _render_entry_header(name: str, tag: str) -> str:
         "compact_checkpoint": "📦 **Checkpoint**",
         "meta": "📝 **Meta**",
         "thinking": "🧠 **思考**",
+        "config_override": "⚙️ **配置变更**",
     }
     prefix = tag_to_prefix.get(tag, "")
     if not prefix:
@@ -159,12 +160,38 @@ def _render_markdown(payload: dict, entries: list[dict]) -> str:
         "",
     ]
 
+    topic_body = payload.get("topic", "")
+    if topic_body:
+        lines.extend(
+            [
+                "## 原始辩题",
+                "",
+                topic_body,
+                "",
+                "---",
+                "",
+            ]
+        )
+
     for entry in entries:
         header = _render_entry_header(entry["name"], entry.get("tag", ""))
         tag = entry.get("tag", "")
         content = entry["content"]
         if tag == "compact_checkpoint" and not content:
             content = _render_compact_state(entry.get("state", {}))
+        if tag == "config_override":
+            lines.extend(
+                [
+                    "",
+                    "---",
+                    "",
+                    f"⚙️ **配置变更**：{content}",
+                    "",
+                    "---",
+                    "",
+                ]
+            )
+            continue
         lines.extend(
             [
                 "",

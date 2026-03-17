@@ -4,13 +4,14 @@ This is the debate-tool project — a multi-model debate framework.
 
 ## Key Files
 
-- `debate_tool/__main__.py` — Unified CLI router (subcommands: `run`, `build`, `stance`)
-- `debate_tool/runner.py` — Debate engine. Usage: `debate-tool run <topic.md> [--rounds N] [--dry-run] [--cross-exam [N]] [--early-stop] [--cot[=LENGTH]]`
+- `debate_tool/__main__.py` — Unified CLI router (subcommands: `run`, `build`)
+- `debate_tool/runner.py` — Debate engine. Usage: `debate-tool run <topic.md> [--rounds N] [--dry-run] [--cross-exam [N]] [--early-stop] [--cot[=LENGTH]]` / `debate-tool resume <log.json> [resume_topic.md] [--rounds N] [--message MSG] [--guide PROMPT] [--cross-exam [N]] [--cot [N]] [--force]`
 - `debate_tool/wizard.py` — TUI wizard (14-step curses state machine)
 - `debate_tool/core.py` — Defaults, constants, mode presets, convergence check, YAML generation
-- `debate_tool/stance.py` — LLM-powered debater stance recommendation
 - `template.md` — Topic file template with all fields documented
 - `scripts/opencode_proxy.py` — OpenCode session 代理，把 OpenCode session 包装成 OpenAI-compatible 辩手后端
+- `scripts/migrate_v1_to_v2.py` — v1→v2 日志迁移脚本
+- `test_edo.md` — 测试用 topic 文件（江户幕府辩题，gpt-4o-mini）
 - `pyproject.toml` — Package config with `[cli]`, `[web]`, `[all]` extras
 - `.claude/commands/debate.md` — Claude Code `/debate` skill (source)
 
@@ -22,8 +23,9 @@ This is the debate-tool project — a multi-model debate framework.
 4. `--early-stop` enables convergence detection (trigram Jaccard) to skip remaining rounds
 5. `--cot[=LENGTH]` enables two-stage thinking (CoT) for debaters; thinking is logged with a 🧠 tag and excluded from other debaters' context
 6. `debate-tool build` launches wizard (web default, `--cli` for TUI)
-7. Output: `{stem}_debate_log.md` + `{stem}_debate_summary.md`
+7. Output: `{stem}_debate_log.json` (v2 Log Schema, self-contained) + `{stem}_debate_summary.md`
 8. API priority: per-debater config > topic-level config > env vars (`DEBATE_BASE_URL`, `DEBATE_API_KEY`)
+9. `resume --guide PROMPT` — lightweight CLI-only ephemeral task override (not persisted to log); replaces `middle_task` for all rounds of this resume run. resume has no `round1_task` by design: use `--guide --rounds 1` to target only the first resume round, then resume again without `--guide` for subsequent rounds. Fine-grained per-round control belongs in resume topic YAML (`middle_task`, `final_task`).
 
 ## Development Notes
 

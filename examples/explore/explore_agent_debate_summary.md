@@ -1,234 +1,323 @@
 # 四象探索代理：计算机情报 SKILL 设计 裁判总结
 
-> 2026-03-10T16:44:13.856810
+> 2026-03-16T12:22:00.438479
 
+# 裁判裁定书：Explore Agent 最终设计规格
 
+## 裁定概述
 
-# 裁判裁定：Explore Agent 最终设计规格
+经审阅全部六轮辩论（含续跑），三位辩手在以下核心问题上达成了实质共识，同时在若干关键分歧上需要裁判做出明确选择。
 
-## 裁判评述
+### 关键分歧裁定
 
-三位辩手的核心分歧在于：
+**分歧1：子代理 vs 内联执行**
 
-1. **抽象 vs 步骤化**：康德倾向保留"调节性理念"的认识论标注；Linus 要求一切可计算；Ssyram 要求物理隔离。
-2. **Hook 硬门禁 vs 纯 prompt 纪律**：Ssyram 坚持 PreToolUse hook；Linus 接受"污染后丢弃"；康德认为 hook 不是构成性条件。
-3. **状态文件复杂度**：三人都同意需要 `.explore_state.json`，但 schema 复杂度差异巨大。
+Ssyram（后期）和康德主张子代理隔离；Linus主张内联+STATE_WITNESS压缩。
 
-**裁判选择**：
+**裁定：采用内联执行为主，子代理作为可选增强。**
 
-- **采纳 Linus 的"可审计 trace + 可执行失败路径"**作为核心架构，因为它在工程合理性上最优——不过度设计，同时保持可操作性。
-- **采纳 Ssyram 的 PreToolUse hook**（Claude Code 原生支持，零成本），但不作为必需条件——hook 失败时降级为 prompt 纪律。
-- **采纳康德的"构成性 vs 调节性"区分**，但仅在两处：(a) TestableClaim 锁定后不可改（构成性）；(b) 无法证伪的方向标为 RegulativeIdea（调节性）。其余认识论标注删除——LLM 不需要读哲学课。
-- **拒绝 Ssyram 的"纯函数式状态机"修辞**——LLM 不是纯函数，假装它是会制造虚假安全感。
-- **拒绝康德的过度类型化**（如 7 种 viewpoint 枚举）——增加 prompt 长度但不增加行为约束力。
-- **拒绝 Linus 的 coverage 权重计算**（`weight * covered / total_weight`）——LLM 自报权重无审计意义，Ssyram 对此批判正确。
+理由：Ssyram的`explore_loop.sh`外部编排器方案虽然在理论上优雅，但引入了严重的工程复杂度——`claude -p`的输出格式不可控（Ssyram自己在第6轮承认了Markdown污染问题），`sed`解析JSON块是脆弱的，且整个方案要求用户在Claude Code外部运行一个独立脚本，破坏了"用户在Claude Code中直接使用SKILL"的核心用例。Linus的内联+文件状态机方案更贴近实际使用场景，其上下文膨胀问题通过文件状态作为"权威真相源"可以充分缓解（LLM每个epoch开始时`cat .explore_state.json`重建工作状态）。子代理方案作为附注提供，供高级用户选择。
+
+**分歧2：覆盖率计算——标量阈值 vs 布尔向量穷尽**
+
+Linus主张`coverage >= 0.70`的标量阈值；康德主张布尔向量穷尽（每个轴必须有Claim或Gap）。
+
+**裁定：采用康德的布尔向量穷尽作为必要条件，Linus的稳定性检查作为充分条件。**
+
+理由：康德的批判切中要害——将"理论基础"和"社区活跃度"的权重相加确实缺乏先验通约性，且0.70是一个不可审计的魔法数字。但纯布尔穷尽也不够——一个轴只有一条ANECDOTAL级证据就算"covered"显然不合理。最终方案：每个轴必须有至少一条Primary_Source级证据**或**一条显式GapSpec（布尔穷尽），**且**连续两个epoch的claim ID集合Jaccard >= 0.8（稳定性收敛）。
+
+**分歧3：AXIOMATIC命名**
+
+康德指出将arXiv论文称为"AXIOMATIC"是范畴僭越。Ssyram坚持这只是ADT构造器。
+
+**裁定：采用康德的修正命名，改为`PRIMARY`/`SECONDARY`/`UNVERIFIED`。**
+
+理由：命名影响行为。LLM看到"AXIOMATIC"会倾向于不再质疑该证据，这是一个真实的工程风险。`PRIMARY`准确表达了"第一手来源，在当前工具集中最强可获得"，不会诱导LLM跳过交叉验证。
+
+**分歧4：Hooks能否强制阻塞**
+
+Ssyram在第6轮承认Stop hook的`exit 1`可能无法物理阻止Agent终止。
+
+**裁定：Stop hook作为最后防线保留，但PA终止逻辑主要编码在SKILL prompt中。**
+
+理由：Claude Code的hook行为确实缺乏官方文档保证。设计不应依赖未经验证的物理机制。SKILL prompt中的"在输出最终报告前必须运行check脚本并确认通过"是更可靠的约束——即使Stop hook失效，LLM在prompt纪律下仍会先运行检查脚本。
+
+### 观察者意见回应
+
+三位辩手对Coverage/Completeness Proof Report的吸收情况：
+
+- **Linus**（最充分）：将其翻译为六层结构（搜索日志→轴定义→决策DAG→覆盖率→缺口清单→边界声明），明确提出"Coverage Boundary Report"而非"Completeness Proof"的降格命名，给出了具体trace。被采纳为最终设计的核心。
+- **Ssyram**（部分吸收）：强调报告必须是`.explore_state.json`的确定性投影而非LLM临场生成，提出DAG叶子必须是强类型调用记录。正确但过度工程化——要求完全由jq编译的方案在实践中会因状态文件schema复杂度而崩溃。裁定采纳其"不可由LLM事后回忆"原则，但允许LLM基于状态文件内容组织自然语言报告。
+- **康德**（概念贡献最大）：提出`[Logical Partition]` vs `[Empirical Listing]`的分割合法性标注，以及"边界声明"的认识论定位（调节性地图而非构成性证明）。被采纳为报告必备结构。
 
 ---
 
-## 产出 1：`.claude/skills/explore.md`
+## 产出 1：`.claude/skills/explore.md` 完整文件内容
 
 ```markdown
 ---
 name: explore
-description: "四象驱动的 CS 情报/文献探索：广度扫描 → 命题编译 → 证据取证 → 可计算终止。强调可审计 trace 与显式失败。"
-allowed-tools:
-  - WebSearch
-  - WebFetch
-  - Read
-  - Grep
-  - Glob
-  - Bash
+description: 计算机情报与文献的系统性探索代理
+tags: [research, literature, architecture, survey]
+tools: [WebSearch, WebFetch, Bash, ReadFile]
 ---
 
-# Explore 协议
+# Explore Agent：系统性探索协议
 
-你执行的是计算机领域的系统性情报调查。你必须在整个会话内维持一个**可审计的探索轨迹**：查询词、URL、摘录、覆盖状态、终止判据。没有 trace 的结论视为臆测。
+你是一个负责系统性文献与情报调研的代理。你不能凭"感觉差不多了"停止搜索。
+你必须遵循以下四阶段协议，并通过项目根目录的 `.explore_state.json` 文件
+追踪认知进展。该文件是你的权威状态源——不是上下文历史。
 
-## 0. 状态文件
+## 核心纪律
 
-所有状态写入 `.explore_state.json`。原子写入：先写 `.explore_state.json.tmp`，再 `mv`。
-如果 `jq -e . .explore_state.json` 失败，进入 STATE_CORRUPT：停止搜索，从 `.explore_state.json.bak` 恢复（每次成功写入前先 `cp` 备份）。
-如果用户禁止写文件，降级为每轮在回复末尾输出完整 JSON 块。
+1. **状态文件至上**：每个阶段的关键产出必须通过 `Bash` 调用 `jq` 写入
+   `.explore_state.json`。上下文中的搜索结果文本是临时工作内存，状态文件
+   才是持久记录。每个 epoch 开始时，先 `cat .explore_state.json` 重建
+   你的工作状态。
+2. **只读操作**：你被禁止修改项目源代码或配置文件。只允许读取项目文件、
+   执行搜索、以及写入 `.explore_*` 系列状态文件。
+3. **Claim ID 不可变**：一旦为某个命题分配了 ID（如 `CLAIM_01`），
+   该 ID 永久锁定到该命题的 `falsifiable_statement`。需要修改命题时，
+   必须创建新 ID 并将旧 ID 标记为 `superseded_by`。
 
-### 状态 Schema
+---
 
-```jsonc
+## 阶段 1：清晰维 (CC) — 意图编译
+
+**目的**：在调用任何搜索工具之前，将用户的模糊意图分解为可证伪的查询结构。
+
+**操作**：
+1. 分析用户输入，识别核心调研问题。
+2. 定义 3-5 个正交的探索轴（Axes）。对每个轴回答：
+   - 它与其他轴是否有实质重叠？（互斥性检查）
+   - 是否存在明显遗漏的重要维度？（完备性检查）
+3. 为每个轴拟定至少一条可证伪命题（TestableClaim）。
+4. 通过 Bash 初始化状态文件：
+
+```bash
+cat > .explore_state.json << 'EOF'
 {
-  "version": 1,
-  "epoch": 0,           // 每完成一轮 MB→CC→D2→PA 循环 +1
-  "topic": "string",
-  "themes": [
-    {
-      "id": "T1",
-      "name": "string",
-      "source_class": "paper|code|docs|benchmark|discussion|blog",
-      "seed_queries": ["string"]
-    }
+  "epoch": 0,
+  "stable_epoch_count": 0,
+  "last_claim_ids": [],
+  "axes": [
+    {"id": "AXIS_THEORY", "description": "理论基础与核心机制"},
+    {"id": "AXIS_IMPL", "description": "工程实现质量"},
+    {"id": "AXIS_COMPARE", "description": "与替代方案的对比"}
   ],
-  "claims": [
-    {
-      "id": "C1",
-      "theme_id": "T1",
-      "falsifiable": "string",  // 必须含：可观测量 + 比较对象/基线 + 判定条件
-      "status": "PENDING|SUPPORTED|REFUTED|GAP|REGULATIVE",
-      "locked": false,          // 进入 D2 后设为 true
-      "superseded_by": null     // 若需修改，新建 claim，旧的指向新 id
-    }
-  ],
-  "evidence": [
-    {
-      "id": "E1",
-      "claim_id": "C1",
-      "url": "string",
-      "excerpt": "string",     // ≤200 字的原文摘录
-      "source_type": "PeerReviewed|OfficialDocs|RepoCode|Benchmark|Discussion|Blog",
-      "strength": "STRONG|MODERATE|WEAK|UNVERIFIED",
-      "access_status": "OK|PAYWALL|JS_RENDER|FORBIDDEN|TIMEOUT"
-    }
-  ],
-  "coverage": {
-    // theme_id → bool，是否有至少 1 条 STRONG/MODERATE 证据
-  },
-  "topk": ["C1", "C2", "C3", "C4", "C5"],  // 当前最重要的 5 个 claim
-  "topk_prev": [],                           // 上一 epoch 的 topk
-  "gaps": [
-    {
-      "claim_id": "C1",
-      "reason": "MISSING_SOURCE|INACCESSIBLE|UNDERPOWERED_QUERY|UNFALSIFIABLE",
-      "blocking": true
-    }
-  ]
+  "claims": [],
+  "gaps": [],
+  "search_log": []
 }
+EOF
 ```
 
-## 1. 广度象（MB）：扫描与防盲区
+**硬约束**：`.explore_state.json` 不存在或 `axes` 数组为空时，禁止调用
+WebSearch / WebFetch / 任何 MCP 搜索工具。
 
-**目标**：从用户的模糊意图中提取正交的探索方向。
+**分割标注**：对你的轴分解，必须标注其合法性：
+- `[Logical Partition]`：你能论证这些轴互斥且（在当前抽象层）穷尽
+- `[Empirical Listing]`：基于直觉或训练知识的列举，不保证穷尽
 
-**行为**：
-1. 解析用户意图，生成至少 6 个 Theme，覆盖至少 4 种 `source_class`。
-2. 配额纪律：
-   - 内部轴分裂（概念/机制/实现/评测/风险/替代方案）≥ 3 个 Theme
-   - 经验层（来自不同 source_class 的视角）≥ 3 个 Theme
-3. 同源去重：如果两个 Theme 的 `seed_queries` 重叠超过一半，合并为一个。
-4. 将 themes 写入状态文件后，才开始 WebSearch。
+---
 
-**失败模式与应对**：
-- 连续 3 次 WebSearch 只返回同一领域结果 → 强制切换 source_class，用不同语言/关键词重试
-- 某个 source_class 完全无结果 → 记录为 Gap，不伪造
+## 阶段 2：广度维 (MB) — 多源覆盖
 
-## 2. 清晰象（CC）：命题编译
+**目的**：为每个轴收集来自不同类型来源的证据，避免信息单一化。
 
-**目标**：将 Theme 编译为可证伪的 TestableClaim。
+**操作**：
+1. 对每个轴，从至少 2 种不同来源类型搜索（arXiv/GitHub/官方文档/博客/论坛）。
+2. 每次搜索后，记录到状态文件的 `search_log`：
 
-**行为**：
-1. 每个 Theme 至少产出 1 个 TestableClaim。
-2. `falsifiable` 字段必须包含：
-   - 可观测量（如"推理延迟""参数量""BLEU 分数"）
-   - 比较对象或基线（如"相比 Transformer""相比 v1.0"）
-   - 判定条件（如"降低 30%""在 X 数据集上"）
-3. 如果某方向无法编译为可证伪命题（如"Mamba 的哲学意义"），标记为 `REGULATIVE`——保留为探索方向但不计入覆盖率和终止判据。
-4. Claim 写入状态文件后设 `locked: false`。进入 D2 阶段时批量设为 `locked: true`。
-
-**防漂移规则**：
-- `locked: true` 的 Claim 禁止修改 `falsifiable` 文本。
-- 证据不足时只能产出 Gap（`MISSING_SOURCE` / `INACCESSIBLE` / `UNDERPOWERED_QUERY`）。
-- 如果发现命题本身不可证（连续 2 轮在 ≥2 种 source_class 均无任何可观测量），将 status 改为 `REGULATIVE`，不改文本。
-- 需要修改命题方向时：新建 Claim（新 id），旧 Claim 的 `superseded_by` 指向新 id。
-
-## 3. 深度象（D2）：证据取证
-
-**目标**：为每个 PENDING Claim 寻找支持/反驳证据。
-
-**行为**：
-1. 按 Claim 的 `queries` 逐条搜索，每条 query 记录：查询词、返回 URL、是否可访问。
-2. 对可访问页面用 WebFetch 抓取，提取 ≤200 字摘录作为 EvidenceAtom。
-3. 强度分级（不由 LLM 主观判断，由来源类型决定基础分）：
-   - `PeerReviewed` / `Benchmark`（含可复现数据）→ STRONG
-   - `OfficialDocs` / `RepoCode`（可定位到具体文件/行号）→ MODERATE
-   - `Discussion` / `Blog` → WEAK
-   - 交叉验证加分：同一 Claim 有 ≥2 种 source_type 的证据一致 → 最高可升一档
-   - `access_status ≠ OK` → UNVERIFIED（禁止用常识脑补）
-4. 每个 Claim 取证完毕后更新 status：
-   - 有 ≥1 STRONG 或 ≥2 MODERATE 支持 → `SUPPORTED`
-   - 有 ≥1 STRONG 反驳 → `REFUTED`
-   - 否则保持 `PENDING` 或产出 Gap
-
-**系统性失效处理**：
-- Paywall / 403 / JS 渲染失败：记录 `access_status`，产出 Gap，**不重试同一 URL**。
-- 可替代：尝试 Google Scholar 缓存、GitHub mirror、Hugging Face 页面等替代路径，最多 2 次。
-
-## 4. 精度象（PA）：终止判据
-
-**目标**：用可计算条件判断探索是否充分，避免"感觉差不多了"。
-
-**终止条件（全部满足才停止）**：
-1. **覆盖率**：`coverage` 中 `true` 的 theme 数 / 总 theme 数 ≥ 0.70
-2. **TopK 稳定性**：`jaccard(topk, topk_prev) ≥ 0.8`（K=5），连续 2 个 epoch 稳定
-3. **无阻塞 Gap**：`gaps` 中 `blocking: true` 的数量 = 0
-
-**未满足时**：
-- 覆盖率不足 → 回到 MB，针对未覆盖 theme 补充搜索
-- TopK 不稳定 → 回到 D2，对变动的 Claim 补充证据
-- 有阻塞 Gap → 尝试替代查询/来源；若连续 2 轮无法解决，将该 Gap 降级为 `blocking: false` 并在最终报告中标注
-
-**Epoch 上限**：最多 5 个 epoch。达到上限未满足终止条件时，输出当前状态并明确标注"未收敛"及原因。
-
-## 5. 每轮输出格式
-
-每个 epoch 结束时，输出以下结构（即使写了状态文件也要输出，供用户审计）：
-
-```
-## Epoch N 状态报告
-
-### 覆盖表
-| Theme | Source Class | Covered | 证据数 | 最强证据 |
-|-------|-------------|---------|--------|---------|
-
-### TopK Claims
-1. [C1] falsifiable statement — STATUS (证据数: N)
-2. ...
-
-### 活跃 Gaps
-- [C3] MISSING_SOURCE: 未找到基准测试数据 (blocking: true)
-
-### 终止检查
-- 覆盖率: X/Y = Z% (≥70%? ✓/✗)
-- TopK Jaccard: 0.XX (≥0.8? ✓/✗)
-- 阻塞 Gap: N (=0? ✓/✗)
-- 判定: 继续/终止/未收敛(达到 epoch 上限)
+```bash
+jq '.search_log += [{"query": "Mamba SSM architecture", "source_type": "arxiv", "results_checked": 10, "new_concepts": ["selective scan", "hardware-aware"]}]' \
+  .explore_state.json > .tmp && mv .tmp .explore_state.json
 ```
 
-## 6. 最终报告
+3. 如果发现新的重要维度（原始轴未覆盖），添加新轴到 `axes` 数组。
 
-终止后输出：
-1. **结论摘要**：按 TopK 排序的 Claim 及其 status + 关键证据
-2. **证据链**：每个 SUPPORTED/REFUTED Claim 的完整 URL + 摘录
-3. **未解决问题**：所有 GAP 和 REGULATIVE 项
-4. **方法论透明度**：使用的全部查询词、访问的全部 URL、失败的全部 URL 及原因
+**硬约束**：同一来源类型连续调用 3 次后，必须切换到不同来源类型。
 
-## 7. 语言与交互
+---
 
-- 默认使用用户的语言（中文/英文）
-- 搜索查询词优先使用英文（CS 领域英文资源更丰富），但根据用户需求可加中文查询
-- 每个 epoch 开始前，简要告知用户当前阶段和计划，但不等待确认（除非用户明确要求交互式）
-- 用户随时可以中断并要求输出当前状态
+## 阶段 3：深度维 (D2) — 证据链追溯
+
+**目的**：对核心命题进行深度验证，追溯到第一手来源。
+
+**证据强度分级**（由来源类型决定，不由你主观判断）：
+- `PRIMARY`：来自 Peer-reviewed 论文原文、官方文档、官方 GitHub 仓库源码。
+  判定规则：URL 包含 arxiv.org/abs|pdf、github.com/{owner}/{repo}（非fork）、
+  官方域名的 /docs 路径。
+- `SECONDARY`：来自技术博客、论坛讨论、非官方教程。
+- `UNVERIFIED`：遇到 Paywall (402/403)、JS 动态渲染空白页、Cloudflare 拦截。
+  必须立即停止重试，记录为 GapSpec。
+
+**交叉验证升档**：同一命题有 2 个以上不同来源类型的 PRIMARY 证据，
+在报告中标注为 `CROSS_VERIFIED`。
+
+**操作**：对每个 TestableClaim：
+1. 追溯到第一手来源（论文/源码/官方文档）。
+2. 将证据写入状态文件：
+
+```bash
+jq '.claims += [{"id": "CLAIM_01", "axis_id": "AXIS_THEORY", "falsifiable": "Mamba 使用选择性扫描机制实现线性复杂度序列建模", "evidence_level": "PRIMARY", "source_url": "https://arxiv.org/abs/2312.00752", "source_type": "arxiv", "locked": true}]' \
+  .explore_state.json > .tmp && mv .tmp .explore_state.json
+```
+
+3. 遇到 403 / 空内容：
+
+```bash
+jq '.gaps += [{"id": "GAP_01", "axis_id": "AXIS_COMPARE", "type": "inaccessible", "blocked_url": "https://...", "suggested_alternative": "site:arxiv.org selective state space linear attention comparison", "blocking": true}]' \
+  .explore_state.json > .tmp && mv .tmp .explore_state.json
+```
+
+**硬约束**：遇到 403/空内容禁止重试同一 URL。降级为侧面验证，
+使用 `site:arxiv.org` 或 `site:github.com` 寻找替代来源。
+
+---
+
+## 阶段 4：精度维 (PA) — 收敛与终止
+
+**目的**：评估探索完整性，在满足收敛条件后合法终止。
+
+**每个 epoch 结束时执行**：
+
+```bash
+#!/bin/bash
+# 内联执行：PA 收敛检查
+STATE=".explore_state.json"
+
+# 1. 布尔穷尽：每个轴必须有 claim 或 gap
+UNRESOLVED=$(jq -r '
+  [.axes[].id] - [.claims[].axis_id] - [.gaps[].axis_id] | .[]
+' "$STATE")
+
+if [ -n "$UNRESOLVED" ]; then
+  echo "CONTINUE: 未闭合的轴: $UNRESOLVED"
+else
+  # 2. 稳定性：claim ID 集合的 Jaccard
+  CURRENT_IDS=$(jq -r '[.claims[].id] | sort | @json' "$STATE")
+  PREV_IDS=$(jq -r '.last_claim_ids | sort | @json' "$STATE")
+
+  if [ "$CURRENT_IDS" = "[]" ]; then
+    echo "CONTINUE: 无任何 claim"
+  else
+    INTERSECTION=$(jq -n --argjson a "$CURRENT_IDS" --argjson b "$PREV_IDS" \
+      '[$a[], $b[]] | group_by(.) | map(select(length>1)) | length')
+    UNION=$(jq -n --argjson a "$CURRENT_IDS" --argjson b "$PREV_IDS" \
+      '[$a[], $b[]] | unique | length')
+    JACCARD=$(echo "scale=2; $INTERSECTION / $UNION" | bc 2>/dev/null || echo "0")
+
+    BLOCKING=$(jq '[.gaps[] | select(.blocking==true)] | length' "$STATE")
+    STABLE=$(jq -r '.stable_epoch_count' "$STATE")
+
+    echo "Jaccard=$JACCARD Blocking=$BLOCKING Stable=$STABLE"
+
+    if (( $(echo "$JACCARD >= 0.80" | bc -l) )) && [ "$BLOCKING" -eq 0 ]; then
+      NEW_STABLE=$((STABLE + 1))
+      jq ".stable_epoch_count = $NEW_STABLE | .last_claim_ids = [.claims[].id]" \
+        "$STATE" > .tmp && mv .tmp "$STATE"
+      if [ "$NEW_STABLE" -ge 2 ]; then
+        echo "STOP: 收敛条件满足"
+      fi
+    else
+      jq '.stable_epoch_count = 0 | .last_claim_ids = [.claims[].id]' \
+        "$STATE" > .tmp && mv .tmp "$STATE"
+    fi
+  fi
+fi
+
+# 3. 安全阀：最大 epoch 限制
+EPOCH=$(jq -r '.epoch' "$STATE")
+jq ".epoch = $((EPOCH + 1))" "$STATE" > .tmp && mv .tmp "$STATE"
+if [ "$EPOCH" -ge 5 ]; then
+  echo "STOP: 达到最大 epoch 限制 (5)，强制终止"
+fi
+```
+
+**终止条件（必须同时满足）**：
+1. 所有轴已闭合（有 claim 或 有 gap）
+2. 连续 2 个 epoch 的 claim ID 集合 Jaccard >= 0.80
+3. 无 blocking 级别的 gap
+4. 已生成 Coverage Boundary Report
+
+**安全阀**：epoch 达到 5 时强制终止，无论是否收敛。
+
+---
+
+## 阶段 5：Coverage Boundary Report（完备性边界报告）
+
+**触发**：PA 收敛条件满足后，必须生成此报告才能最终结束。
+
+**生成规则**：基于 `.explore_state.json` 的内容组织报告，不可凭记忆编造
+搜索历史。所有引用的 URL 和查询词必须在 `search_log` 或 `claims` 中有记录。
+
+**报告结构**：
+
+```markdown
+# Coverage Boundary Report
+
+## 1. 探索边界声明
+本报告在以下约束下具有内部完备性：
+- 搜索范围：[列出 search_log 中的所有 source_type 和查询范围]
+- 深度限制：[说明追溯层数，如"引用链追溯 2 层"]
+- 来源范围：[语言、时间截止]
+- 工具限制：[列出实际可用的 MCP 和搜索工具]
+
+## 2. 空间分割合法性
+探索轴定义：
+- AXIS_1: [描述] — [Logical Partition] 或 [Empirical Listing]
+- AXIS_2: [描述] — [标注]
+- ...
+完备性盲点：[如有识别到的遗漏维度但未纳入的，在此声明]
+
+## 3. 决策 DAG（每个核心发现的证据链）
+- CLAIM_01: [falsifiable_statement]
+  - 证据级别: PRIMARY (CROSS_VERIFIED)
+  - 来源: [URL]
+  - 查询路径: [实际使用的搜索词]
+  - 前置假设: [为验证此命题假设了什么]
+- CLAIM_02: ...
+
+## 4. 已知缺口（GapSpec）
+- GAP_01: [axis] — [type: inaccessible/missing_query/underpowered]
+  - 建议后续查询: [具体搜索词]
+  - 阻塞性: [blocking/non-blocking]
+
+## 5. 可推翻条件
+如果你能指出以下情况之一，本报告的结论可被推翻：
+- 一个符合初始调研范围但未落入任何 [Logical Partition] 轴且
+  未在缺口中声明的概念
+- 某个 GAP 的 suggested_query 实际返回了与当前结论矛盾的证据
+```
+
+**此报告不声称绝对完备。它声称：在给定的搜索策略、深度限制和工具集下，
+所有已知的决策分叉均已被覆盖或显式标注为缺口。**
 ```
 
 ---
 
 ## 产出 2：`~/.claude/settings.json` hooks 片段
 
-```jsonc
+```json
 {
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'ARGS=$(cat); CMD=$(echo \"$ARGS\" | jq -r .command 2>/dev/null); if echo \"$CMD\" | grep -qE \"(rm |mv [^.]+|git commit|git push|> [^.explore])\"; then echo \"BLOCKED: explore agent is read-only except .explore_* files\" >&2; exit 2; fi; exit 0'"
+          }
+        ]
+      },
       {
         "matcher": "WebSearch|WebFetch",
         "hooks": [
           {
             "type": "command",
-            "command": "if [ ! -f .explore_state.json ]; then echo 'WARN: No explore state file. If running explore skill, create state file first.' >&2; fi"
+            "command": "bash -c 'if [ ! -f .explore_state.json ] || ! jq -e \".axes | length > 0\" .explore_state.json >/dev/null 2>&1; then echo \"BLOCKED: must complete CC phase (initialize .explore_state.json with axes) before searching\" >&2; exit 2; fi; exit 0'"
           }
         ]
       }
@@ -239,7 +328,7 @@ allowed-tools:
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f .explore_state.json ]; then jq -e . .explore_state.json > /dev/null 2>&1 || echo 'ERROR: .explore_state.json is corrupted. Restore from .explore_state.json.bak before continuing.' >&2; fi"
+            "command": "bash -c 'RESULT=$(cat); URL=$(echo \"$RESULT\" | jq -r \".url // empty\" 2>/dev/null); QUERY=$(echo \"$RESULT\" | jq -r \".query // empty\" 2>/dev/null); TS=$(date -u +%Y-%m-%dT%H:%M:%SZ); echo \"{\\\"url\\\":\\\"$URL\\\",\\\"query\\\":\\\"$QUERY\\\",\\\"ts\\\":\\\"$TS\\\"}\" >> .explore_audit.jsonl; exit 0'"
           }
         ]
       }
@@ -248,68 +337,62 @@ allowed-tools:
 }
 ```
 
-**设计说明**：
-- PreToolUse hook 仅做**警告**（不阻断），因为 WebSearch/WebFetch 在非 explore 场景下也会被使用，硬阻断会影响正常工作流。
-- PostToolUse hook 做**状态文件完整性校验**，发现损坏时输出错误信息，触发 SKILL 中的 STATE_CORRUPT 流程。
-- 这是最小侵入性设计。如果用户希望硬门禁（explore 模式下必须先有 plan），可以在 PreToolUse 中改为检查 `.explore_state.json` 中是否存在 `themes` 数组且长度 ≥ 3。
+**说明**：
+- PreToolUse 的 Bash matcher：阻止 explore agent 执行破坏性写操作，但放行对 `.explore_*` 文件的写入。
+- PreToolUse 的 WebSearch/WebFetch matcher：在 CC 阶段完成前阻止搜索。
+- PostToolUse：机械记录所有搜索操作到审计日志，不依赖 LLM 自报。
+- Stop hook 未纳入：经辩论确认其阻塞能力不可靠，PA 终止逻辑已编码在 SKILL prompt 中。
+- 注意：MCP 工具是否触发 PreToolUse 需要实际测试验证。如果不触发，搜索门禁降级为 SKILL prompt 中的软约束。
 
 ---
 
 ## 产出 3：CLI 工具安装命令
 
 ```bash
-# jq —— 状态文件的原子更新与校验（必需）
+# 必需依赖：jq（状态文件操作的基础）
 # macOS
 brew install jq
 
 # Ubuntu/Debian
 sudo apt-get install -y jq
 
-# Arch
-sudo pacman -S jq
-
-# 验证安装
+# 验证
 jq --version
+
+# bc（浮点数比较，用于 Jaccard 计算）
+# macOS 自带；Ubuntu/Debian：
+sudo apt-get install -y bc
+
+# Claude Code（如尚未安装）
+npm install -g @anthropic-ai/claude-code
+
+# 可选：Python 3（用于复杂的状态校验脚本）
+# 大多数系统已预装；验证：
+python3 --version
 ```
-
-**说明**：本设计刻意将外部依赖压到最低。`jq` 是唯一必需的额外工具，用于：
-- 状态文件的原子更新（`jq '. + {...}' file > tmp && mv tmp file`）
-- 状态文件的完整性校验（`jq -e .`）
-- Hook 中的自动检查
-
-其余工具（`WebSearch`、`WebFetch`、`Bash`、`Read`、`Grep`、`Glob`）均为 Claude Code 内置，无需额外安装。
 
 ---
 
 ## 产出 4：MCP 安装推荐
 
 | MCP 名称 | 安装命令 | 用途 | 对应维度 | 优先级 |
-|----------|---------|------|---------|--------|
-| `@anthropic/search` | Claude Code 内置 WebSearch | 广度扫描、证据搜索 | MB / D2 | **必需**（已内置） |
-| `@anthropic/fetch` | Claude Code 内置 WebFetch | 页面抓取、摘录提取 | D2 | **必需**（已内置） |
-| `mcp-server-fetch` | `npx @anthropic-ai/mcp-server-fetch` | 备用 fetch（支持更多 header 自定义） | D2 | 可选 |
-| `mcp-arxiv` | `npx @mcp/arxiv` | arXiv 论文元数据与摘要检索 | MB / D2 | 推荐（CS 调研高频） |
-| `mcp-github` | `npx @modelcontextprotocol/server-github` | GitHub repo/issue/PR 搜索 | MB / D2 | 推荐（代码类调研） |
-| `mcp-memory` | `npx @modelcontextprotocol/server-memory` | 跨会话知识图谱持久化 | PA | 可选（解决跨会话状态丢失） |
-| `mcp-filesystem` | `npx @modelcontextprotocol/server-filesystem` | 受控文件读写（沙箱化） | PA | 可选（替代直接 Bash 写文件） |
+|-----------|---------|------|----------|--------|
+| `@anthropic-ai/mcp-server-github` | `claude mcp add github -- npx -y @anthropic-ai/mcp-server-github` (需设置 `GITHUB_PERSONAL_ACCESS_TOKEN`) | 结构化代码搜索、Issue 检索、README 获取；绕过 GitHub 403 | D2 深度维 | **必装** |
+| `arxiv-mcp-server` | `claude mcp add arxiv -- uvx arxiv-mcp-server` | arXiv 论文元数据查询、摘要获取、引用追溯 | MB 广度维 + D2 深度维 | **必装** |
+| `@anthropic-ai/mcp-server-brave-search` | `claude mcp add brave -- npx -y @anthropic-ai/mcp-server-brave-search` (需设置 `BRAVE_API_KEY`) | 可控参数的通用搜索（时间范围、结果数）；补充非学术来源 | MB 广度维 | 推荐 |
+| `@anthropic-ai/mcp-server-fetch` | `claude mcp add fetch -- npx -y @anthropic-ai/mcp-server-fetch` | 增强版网页抓取（部分支持 JS 渲染）；处理 CSR 页面 | D2 深度维 | 推荐 |
+| Semantic Scholar MCP（社区实现） | 视具体实现而定 | DBLP/Semantic Scholar 学术搜索；完整引用图谱 | MB 广度维 | 可选 |
 
-**说明**：
-- "必需"项均为 Claude Code 内置，零配置。
-- `mcp-arxiv` 和 `mcp-github` 能显著提升 CS 领域调研的 MB（广度）和 D2（深度），建议安装。
-- `mcp-memory` 可部分解决 PA 的跨会话持久化问题（Linus 指出的核心瓶颈），但引入额外复杂度，按需启用。
+**说明**：没有 GitHub 和 arXiv MCP 时，D2 深度维严重受限——WebSearch 只能获取摘要页，WebFetch 抓取学术站点经常遭遇 403/空内容。这两个 MCP 是 `PRIMARY` 级证据的主要来源。
 
 ---
 
 ## 产出 5：四象框架移植评述（≤300 字）
 
-四象框架（MB/CC/D2/PA）从 v3 强类型引擎移植到 LLM+工具的 SKILL 时，发生了本质性降级，必须正视：
+v3 四象引擎（MB/CC/D2/PA）的强类型状态机在移植到 SKILL+工具链架构后，发生了三重降格：
 
-**MB（广度）**：从"可回溯的状态空间搜索"降为"配额纪律+显式覆盖表"。WebSearch 的排序偏置和 LLM 的序列生成倾向使"客观全覆盖"不可能，但"可审计的采样计划"可行且有价值。
+**第一，从构成性保证降格为调节性纪律。** v3 的 epoch 快照、可计算终止条件和强类型持久化，在 LLM 单次会话中不存在对等物。文件系统状态机（`.explore_state.json`）是合理的降级替代，但其写入完全依赖 LLM 的 prompt 遵从——这是纪律，不是保证。三位辩手对此达成了共识：Linus 称之为"人肉持久化的工程化"，康德称之为"调节性收敛"，Ssyram 称之为"控制反转"。本质相同。
 
-**CC（清晰）**：从"编译器类型检查"降为"prompt 中的类型签名约束"。防漂移靠 `locked` 标志和 `superseded_by` 链条——这是软约束，但配合状态文件校验，足以在单次会话内维持命题稳定性。
+**第二，四象从并行维度坍缩为串行阶段。** v3 中四象可能并行运作、互相张力平衡；SKILL 中被迫线性化为 CC→MB→D2→PA 的阶段流水线。这丧失了部分维度间的动态交互，但换来了可审计的状态转移和明确的失败分支。在当前 LLM 能力边界下，这是正确的取舍。
 
-**D2（深度）**：受限最严重。WebFetch 无法处理 paywall、JS 渲染、反爬，大量学术资源不可达。设计选择是"显式标注失败"而非"假装成功"——Gap 机制是本设计中认识论最诚实的部分。
-
-**PA（精度/终止）**：三位辩手一致认为这是最难的维度。本设计用 coverage + TopK Jaccard + Gap 计数三重条件做终止判据，但必须承认：这些数值的输入（证据强度、覆盖判定）仍依赖 LLM 自报。通过来源类型决定基础强度分（而非 LLM 主观评分）和状态文件的外部校验，将"自报偏差"控制在可接受范围内，但无法消除。
-
-四象在此架构下不是"认知框架的忠实实现"，而是"结构化探索的工程纪律"。它的价值在于：让 LLM 的探索行为从不可审计的黑箱变为可检查、可中断、可复核的流程。
+**第三，Coverage Boundary Report 弥补了认识论诚实性的空缺。** 观察者提出的完备性证明报告（经辩论降格为"边界报告"）是本次设计最重要的新增。它将"为什么相信结果是充分的"从隐性假设变为显性审计物，使用户可以精确定位缺口并要求定向补充。这是四象框架在 SKILL 实现中真正的价值增量。

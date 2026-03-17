@@ -25,17 +25,34 @@
 python3 -m debate_tool run topic.md
 
 # 续跑（注入观察者 message）
-python3 -m debate_tool resume topic.md --rounds 1 --cross-exam 0 --message '...'
+python3 -m debate_tool resume topic_debate_log.json --rounds 1 --message '...'
 
-# 续跑（不跑裁判，只跑辩手）
-python3 -m debate_tool resume topic.md --rounds 1 --cross-exam 0 --no-judge --message '...'
+# 续跑（使用 Resume Topic 文件批量覆盖配置）
+python3 -m debate_tool resume topic_debate_log.json phase2.md
 
-# 压缩日志（用于长日志摘要提取）
-python3 -m debate_tool compact topic_debate_log.md --compress ALL --token-budget 12000
+# 续跑（带引导，不追加辩论，只跑 judge）
+python3 -m debate_tool resume topic_debate_log.json --rounds 0 --message '...'
 
-# 只触发裁判（rounds=0）
-python3 -m debate_tool resume topic.md --rounds 0 --message '...'
+# 压缩日志
+python3 -m debate_tool compact topic_debate_log.json
+
+# Resume Topic 文件格式（YAML front-matter 增量覆盖 + body 作为观察者消息）
+# 支持字段：rounds, middle_task, final_task, constraints, judge_instructions,
+#           add_debaters, drop_debaters, judge, cross_exam, max_reply_tokens, cot
+# 注：add_debaters/drop_debaters 需配合 --force；guide 仅 CLI --guide 支持，不写 log
 ```
+
+### Resume Topic 文件（批量配置）
+
+Resume Topic 文件（.md）用于 `resume` 命令的第二个可选位置参数，格式同 topic 文件（YAML front-matter + Markdown body）：
+
+- **YAML front-matter**：增量覆盖配置（只写需要变更的字段，其余继承）
+- **Markdown body**：观察者消息（等同于 `--message`）
+- 覆盖记录为 `config_override` entry，**持久累积**：下次 resume 自动继承
+- CLI 参数（`--cross-exam`、`--cot`）是**临时覆盖**，不记入 log
+
+支持的 override 字段：`middle_task`, `final_task`, `constraints`, `judge_instructions`, `add_debaters`, `drop_debaters`, `judge`, `cross_exam`, `max_reply_tokens`, `cot`
+> `add_debaters`/`drop_debaters` 需配合 `--force`；`--guide` 是 CLI 专用的轻量指引（不持久化到 log，替换本次续跑每轮的 middle_task）
 
 所有命令在 `$DEBATE_TOOL_DIR` 目录下执行（即 debate-tool 安装目录）。
 
@@ -183,7 +200,7 @@ python3 -m debate_tool run examples/your-topic/topic1.md
 执行时注意：
 - timeout 设 420 秒以上（API 可能慢）
 - 同步等待完成，不要中断
-- 输出文件：`topic1_debate_log.md` 和 `topic1_debate_summary.md`
+- 输出文件：`topic1_debate_log.json` 和 `topic1_debate_summary.md`
 
 ---
 
@@ -204,7 +221,7 @@ python3 -m debate_tool run examples/your-topic/topic1.md
 
 1. **讨论发散、没收敛**：注入裁判介入 message，要求聚焦到 1-2 个最重要问题
 2. **只有哲学原则，没有工程操作**：注入"请给出具体的 JSON 骨架/伪代码/状态机 diff"
-3. **结论需要白话化**：先 `--no-judge` 续跑让辩手用日常语言重述，再单独触发裁判（`--rounds 0`）
+3. **结论需要白话化**：用 `--rounds 1` 白话续跑让辩手用日常语言重述，再用 `--rounds 0` 单独触发裁判
 
 ---
 
@@ -246,7 +263,7 @@ python3 -m debate_tool run examples/your-topic/topic1.md
 
 **在每次续跑前必须备份日志**：
 ```bash
-cp topic1_debate_log.md topic1_debate_log.checkpoint_N.md
+cp topic1_debate_log.json topic1_debate_log.checkpoint_N.json
 ```
 
 这样可以从同一起点跑多条路径做比较。
@@ -258,8 +275,8 @@ cp topic1_debate_log.md topic1_debate_log.checkpoint_N.md
 当核心结论已经产出但充满术语时，用白话续跑：
 
 ```bash
-# 先让辩手用日常语言重述（不跑裁判）
-python3 -m debate_tool resume topic.md --rounds 1 --cross-exam 0 --no-judge --message '
+# 白话续跑（让辩手用日常语言重述，judge 也会运行，其输出会作为白话版总结）
+python3 -m debate_tool resume topic_debate_log.json --rounds 1 --message '
 【白话重述任务】
 
 把本次讨论的所有结论，用最平实的日常语言重新说一遍，配上具体例子。
@@ -271,8 +288,8 @@ python3 -m debate_tool resume topic.md --rounds 1 --cross-exam 0 --no-judge --me
 2. 最后一句话必须是：「用一句话总结，这个机制就是：____」
 '
 
-# 单独触发裁判输出白话版总结
-python3 -m debate_tool resume topic.md --rounds 0 --message '
+# 只触发 judge 给出白话版总结（rounds=0）
+python3 -m debate_tool resume topic_debate_log.json --rounds 0 --message '
 【请裁判输出白话版结论】
 可以多写，但每个要点要尽量用大白话。
 可以用少量符号/代码，但每次出现时必须紧跟一行大白话翻译（「也就是说……」）。
@@ -316,7 +333,7 @@ python3 -m debate_tool resume topic.md --rounds 0 --message '
 | **深度被广度稀释** | 每追溯一层假设就旁出三个新话题，主线消失 | 加 `worth()` 守卫：只有局部假设已局部闭合才允许旁出 |
 | **补域爆炸** | 补域/广度无限扩展，没有停止 | 加截断条件：无外部经验命中则挂起（不展开） |
 | **topic2 错误** | 把工程细节讨论当成机制验证 | 先验证核心命题，再开细节 topic |
-| **术语结论** | summary 满是 S4.5、GapSpec，用户读不懂 | 白话续跑（--no-judge + 单独触发裁判） |
+| **术语结论** | summary 满是 S4.5、GapSpec，用户读不懂 | 白话续跑（`--rounds 1` 白话重述 + `--rounds 0` 单独触发裁判） |
 | **裁判过于严苛** | 裁判字数限制太死，输出残缺 | 裁判 judge_instructions 写"可以多写" |
 
 ---
@@ -443,7 +460,7 @@ judge_instructions: |
     ↓
 白话化检查：结论是否配了具体例子、术语是否翻译、一句话总结是否直觉？
     满足 → 更新 README，完成
-    不满足 → 白话续跑（--no-judge + 单独触发裁判）
+    不满足 → 白话续跑（`--rounds 1` 白话重述 + `--rounds 0` 单独触发裁判）
     ↓
 更新 README（来龙去脉 + 三大推进 + 最终裁定 + 未解问题 + 文件索引）
 ```
@@ -458,6 +475,7 @@ judge_instructions: |
 2. **写 topic**：写 topic 文件，必须包含：完整系统背景（让辩手无需读其他文件）+ 具体决策点说明 + 开放性问题框架，API 凭证使用 `${DEBATE_BASE_URL}` / `${DEBATE_API_KEY}` 占位符
 3. **自洽性检查**：只看那一份 topic 文档，判断背景是否完整自洽；如有问题先读相关文件再补充修复
 4. **运行辩论**：从 `.local/test_kimi_v7.md` 注入真实凭证，运行 `python3 -m debate_tool run <topic.md> --rounds N --cross-exam`，运行后立刻还原占位符
+5（续跑）：`python3 -m debate_tool resume <topic_debate_log.json> [resume_topic.md] --rounds N`
 5. **查看遗留问题**：读取 summary，评估是否有未解决的障碍点或新矛盾
 6. **后续处理**：
    - 有新话题 → 重新走完整流程（步骤 1 起）

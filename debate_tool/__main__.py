@@ -10,7 +10,6 @@
     compact  \u624b\u52a8\u538b\u7f29\u65e5\u5fd7\uff08\u751f\u6210 checkpoint\uff09
     modify   \u4fee\u6539 topic \u914d\u7f6e\uff08\u8fa9\u624b/\u88c1\u5224/\u7acb\u573a\uff09\u5e76\u8bb0\u5f55\u53d8\u66f4
     live     \u542f\u52a8\u8fa9\u8bba + Web \u5b9e\u65f6\u67e5\u770b\u5668
-    stance   \u751f\u6210\u8fa9\u624b\u7acb\u573a\u63a8\u8350
 
 \u793a\u4f8b:
     debate-tool run my_topic.md
@@ -23,7 +22,6 @@
     debate-tool modify my_topic.md --drop B --force
     debate-tool modify my_topic.md --pivot "A|\u65b0\u7684\u7acb\u573a\u63cf\u8ff0"
     debate-tool live my_topic.md
-    debate-tool stance my_topic.md --num 5
 """
 
 import sys
@@ -35,89 +33,56 @@ def _print_help():
 
 def _handle_resume(argv):
     import argparse
-    import asyncio
     from pathlib import Path
 
-    parser = argparse.ArgumentParser(
-        description="续跑辩论 — 在已有日志基础上追加轮次",
-    )
-    parser.add_argument(
-        "files",
-        type=Path,
-        nargs=2,
-        metavar=("FILE_A", "FILE_B"),
-        help="日志文件和 topic 文件（顺序任意，自动识别）",
-    )
-    parser.add_argument(
-        "--message", "-m", type=str, default="", help="注入观察者消息（问题/意见/指导）"
-    )
-    parser.add_argument(
-        "--rounds", "-r", type=int, default=1, help="追加辩论轮数 (默认 1)"
-    )
-    parser.add_argument(
-        "--cross-exam",
-        nargs="?",
-        const=1,
-        type=int,
-        default=0,
-        metavar="N",
-        help="续跑轮次间启用质询：省略值=每轮后质询，-1=每轮，N=前N轮后质询",
-    )
-    parser.add_argument("--guide", type=str, default="", help="辩手引导提示")
-    parser.add_argument("--no-judge", action="store_true", help="续跑后不执行裁判总结")
-    parser.add_argument(
-        "--force", action="store_true", help="跳过 topic/log 一致性校验"
-    )
-    parser.add_argument(
-        "--cot",
-        "--think",
-        dest="cot_length",
-        nargs="?",
-        type=int,
-        const=0,
-        default=None,
-        metavar="LENGTH",
-        help="为辩手启用思考空间 (CoT)。LENGTH 为可选思考 token 预算，省略则不限制。",
-    )
-    parser.add_argument(
-        "--debug",
-        nargs="?",
-        const=True,
-        default=None,
-        metavar="DEBUG_LOG",
-        help="开启 debug 日志：省略文件名则输出到控制台，指定文件名则写入文件（10MB 轮转）",
-    )
+    parser = argparse.ArgumentParser(prog="debate-tool resume")
+    parser.add_argument("log_file", type=Path, help="v2 日志文件 (.json)")
+    parser.add_argument("resume_topic", type=Path, nargs="?", default=None,
+                        help="Resume Topic 文件 (.md, 可选)")
+    parser.add_argument("--rounds", "-r", type=int, default=1,
+                        help="追加轮数 (默认 1, 0=仅执行 judge)")
+    parser.add_argument("--message", "-m", default="", help="观察者消息")
+    parser.add_argument("--guide", default="", help="辩手引导提示")
+    parser.add_argument("--cross-exam", nargs="?", const=1, default=None,
+                        type=int, dest="cross_exam",
+                        help="质询频率 (不填=不质询, --cross-exam=N)")
+    parser.add_argument("--cot", nargs="?", const=True, default=None,
+                        dest="cot", help="CoT 长度")
+    parser.add_argument("--force", action="store_true", help="跳过一致性校验；add/drop 辩手时必须指定")
+    parser.add_argument("--debug", default="", help="Debug 标志")
     args = parser.parse_args(argv)
 
-    file_a, file_b = args.files[0].resolve(), args.files[1].resolve()
-    for p in (file_a, file_b):
-        if not p.exists():
-            print(f"❌ 文件不存在: {p}", file=sys.stderr)
-            sys.exit(1)
+    # debug 设置
+    if args.debug:
+        import os
+        os.environ["DEBATE_DEBUG"] = args.debug
 
-    from debate_tool.runner import identify_files, parse_topic_file, resume, init_debug_logging
+    # cot_length 解析
+    cot_length = None
+    if args.cot is not None:
+        if args.cot is True:
+            cot_length = 0  # unlimited
+        else:
+            try:
+                cot_length = int(args.cot)
+            except (ValueError, TypeError):
+                cot_length = 0
 
-    if args.debug is not None:
-        init_debug_logging(args.debug)
-        if args.debug is not True:
-            print(f"  🐛 Debug 日志 → {args.debug}", file=sys.stderr)
+    cfg_overrides: "dict | None" = None
 
-    log_path, topic_path = identify_files(file_a, file_b)
-    cfg = parse_topic_file(topic_path)
-    asyncio.run(
-        resume(
-            cfg,
-            topic_path,
-            log_path=log_path,
-            message=args.message,
-            extra_rounds=args.rounds,
-            cross_exam=args.cross_exam,
-            guide_prompt=args.guide,
-            judge_at_end=not args.no_judge,
-            force=args.force,
-            cot_length=args.cot_length,
-        )
-    )
+    import asyncio
+    from debate_tool.runner import resume
+    asyncio.run(resume(
+        log_path=args.log_file,
+        resume_topic_path=args.resume_topic,
+        message=args.message,
+        extra_rounds=args.rounds,
+        cross_exam=args.cross_exam,
+        guide_prompt=args.guide,
+        force=args.force,
+        cot_length=cot_length,
+        cfg_overrides=cfg_overrides,
+    ))
 
 
 def _handle_compact(argv):
@@ -175,68 +140,6 @@ def _handle_compact(argv):
     init_debug_logging(debug_target)
 
     compact_log(log_path, keep_last=0, token_budget=args.token_budget, topic_path=topic_path)
-
-
-def _handle_modify(argv):
-    import argparse
-    from pathlib import Path
-
-    parser = argparse.ArgumentParser(
-        description="修改 topic 配置并追加变更事件到 log",
-    )
-    parser.add_argument("topic", type=Path, help="议题 Markdown 文件")
-    parser.add_argument(
-        "--set",
-        dest="set_fields",
-        action="append",
-        default=[],
-        metavar="KEY=VAL",
-        help="设置字段，如 debater.A.model=gpt-5、judge.model=claude、rounds=3",
-    )
-    parser.add_argument(
-        "--add",
-        dest="add_debaters",
-        action="append",
-        default=[],
-        metavar="name|model|style",
-        help="添加辩手，格式: name|model|style",
-    )
-    parser.add_argument(
-        "--drop",
-        dest="drop_debaters",
-        action="append",
-        default=[],
-        metavar="NAME",
-        help="移除辩手",
-    )
-    parser.add_argument(
-        "--pivot",
-        dest="pivot_stances",
-        action="append",
-        default=[],
-        metavar="name|new_style",
-        help="变更辩手立场（扬弃），格式: name|new_style",
-    )
-    parser.add_argument("--reason", type=str, default="", help="变更原因说明")
-    parser.add_argument("--force", action="store_true", help="跳过一致性警告强制执行")
-    args = parser.parse_args(argv)
-
-    topic_path = args.topic.resolve()
-    if not topic_path.exists():
-        print(f"❌ 文件不存在: {topic_path}", file=sys.stderr)
-        sys.exit(1)
-
-    from debate_tool.runner import modify_topic
-
-    modify_topic(
-        topic_path,
-        set_fields=args.set_fields,
-        add_debaters=args.add_debaters,
-        drop_debaters=args.drop_debaters,
-        pivot_stances=args.pivot_stances,
-        reason=args.reason,
-        force=args.force,
-    )
 
 
 def _handle_live(argv):
@@ -312,14 +215,8 @@ def main():
         _handle_resume(remaining)
     elif command == "compact":
         _handle_compact(remaining)
-    elif command == "modify":
-        _handle_modify(remaining)
     elif command == "live":
         _handle_live(remaining)
-    elif command == "stance":
-        from debate_tool.stance import main as stance_main
-
-        stance_main(remaining or None)
     else:
         print(f"\u672a\u77e5\u547d\u4ee4: {command}\n", file=sys.stderr)
         _print_help()

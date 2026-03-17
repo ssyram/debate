@@ -516,3 +516,38 @@ def parse_compact_checkpoint(content_str: str) -> dict:
     except (json.JSONDecodeError, ValueError):
         # 旧格式：纯文本
         return {"state": None, "public_view": content_str}
+
+
+def _build_initial_config(cfg: dict) -> dict:
+    """从 parsed topic cfg 构建 v2 log 的 initial_config 快照。
+
+    规则：
+    - per-debater base_url 保留（多端点场景必需），api_key 排除
+    - judge base_url 保留，api_key 排除
+    - 包含 compact 相关配置字段（compact_model 等），未配置则填 null
+    - middle_task_optional 字段在 v2 中废弃，不写入
+    - 这是唯一构建 initial_config 的入口，run() 和迁移脚本均调用此函数
+    """
+    return {
+        "debaters": [
+            {k: v for k, v in d.items() if k != "api_key"}
+            for d in cfg["debaters"]
+        ],
+        "judge": {k: v for k, v in cfg["judge"].items() if k != "api_key"},
+        "constraints": cfg.get("constraints", ""),
+        "round1_task": cfg.get("round1_task", ""),
+        "middle_task": cfg.get("middle_task", ""),
+        "final_task": cfg.get("final_task", ""),
+        "judge_instructions": cfg.get("judge_instructions", ""),
+        "max_reply_tokens": cfg.get("max_reply_tokens", 6000),
+        "timeout": cfg.get("timeout", 300),
+        "cross_exam": cfg.get("cross_exam", 0),
+        "early_stop": cfg.get("early_stop", False),
+        "cot": cfg.get("cot_length", None),
+        # compact 配置：使 compact_log 命令无需外部 topic 文件即可独立运行
+        "compact_model": cfg.get("compact_model", None),
+        "compact_check_model": cfg.get("compact_check_model", None),
+        "compact_max_tokens": cfg.get("compact_max_tokens", None),
+        "embedding_model": cfg.get("embedding_model", None),
+        # 注意：middle_task_optional 在 v2 中废弃，不写入
+    }

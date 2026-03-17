@@ -32,7 +32,7 @@ MARKER = "# debate-tool"
 
 # 每个包 -> 影响的组件描述 和 涉及的文件
 PACKAGE_COMPONENT_MAP: dict[str, tuple[str, list[str]]] = {
-    "httpx": ("核心辩论引擎", ["debate_tool/runner.py", "debate_tool/stance.py"]),
+    "httpx": ("核心辩论引擎", ["debate_tool/runner.py"]),
     "pyyaml": (
         "核心辩论引擎（YAML 解析）",
         ["debate_tool/runner.py", "debate_tool/core.py"],

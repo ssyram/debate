@@ -37,6 +37,7 @@ class AbandonedClaim(TypedDict):
 
 class ParticipantState(TypedDict):
     name: str
+    active: bool  # True = 在辩论中；False = 已通过 drop_debaters 退出
     stance_version: int
     stance: str  # 基于上一版本增量更新的辩手立场笔记
     core_claims: list[Claim]
@@ -65,7 +66,7 @@ class CompactState(TypedDict):
     compact_version: int             # schema version = 1
     covered_seq_end: int
     prev_compact_seq: int | None
-    topic: dict                      # {"current_formulation": str, "notes": str|None}
+    topic: dict  # LLM 生成的辩题演进摘要（非原始辩题文本，原始文本在 Log.topic）；结构：{"current_formulation": str, "notes": str|None}
     participants: list[ParticipantState]
     axioms: list[str]
     disputes: list[Dispute]
@@ -146,6 +147,7 @@ def validate_participant_state(ps: dict) -> bool:
     """
     required_fields = [
         "name",
+        "active",
         "stance_version",
         "stance",
         "core_claims",
@@ -383,6 +385,7 @@ def build_phase_a_prompt(
 _PHASE_B_OUTPUT_SCHEMA = """\
 {
   "name": "<辩手名称（string）>",
+  "active": true,
   "stance_version": <版本号，整数，每次更新加1>,
   "stance": "<以基底文本（initial_style 或上一版本 stance）为起点，对原文做最小精化：参考 core_claims/key_arguments/abandoned_claims 的变化，只修改确实改变的部分；若立场无实质变化则与基底高度相似；不要压缩成一句话，保留原始风格和语气（string）>",
   "core_claims": [
@@ -436,6 +439,9 @@ def build_phase_b_prompt(
     - initial_style: 原始 topic 中该辩手的 style 字符串
     - delta_entries: 全部增量条目（不过滤辩手，cross_exam 全部给看）
     - prev_stance: 上一次 compact 的 stance（空字符串表示首次）
+
+    注意：active 字段过滤由调用方（runner.py）负责——调用方在遍历 participants 时
+    应跳过 active == False 的辩手，不再对其调用本函数。
     """
     name = debater.get("name", "未知辩手")
     system = _PHASE_B_SYSTEM_TEMPLATE.format(name=name)
@@ -499,6 +505,8 @@ def build_validity_check_prompt(stance_json: str) -> tuple[str, str]:
 def get_compact_model_config(cfg: dict) -> tuple[str, str, str]:
     """
     从 topic cfg 中提取 compact_model 配置，返回 (model, base_url, api_key)。
+
+    # v2 log 中，compact 配置存于 log.initial_config（通过 resolve_effective_config 获取）
     """
     model = cfg.get("compact_model")
     if not model:
@@ -641,7 +649,7 @@ def format_delta_entries_text(entries: list[dict]) -> str:
 
     for entry in entries:
         tag = entry.get("tag", "")
-        if tag in ("thinking", "summary", "compact_checkpoint"):
+        if tag in ("thinking", "summary", "compact_checkpoint", "config_override"):
             continue
 
         seq = entry.get("seq", "?")
@@ -755,7 +763,7 @@ def build_stance_correction_prompt(
     system_parts.append("")
     system_parts.append(
         "输出 JSON，字段同 ParticipantState"
-        "（name/stance_version/stance/core_claims/key_arguments/abandoned_claims）。"
+        "（name/active/stance_version/stance/core_claims/key_arguments/abandoned_claims）。"
         "输出严格 JSON，不附加任何解释文字。"
     )
 
