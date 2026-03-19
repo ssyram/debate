@@ -71,7 +71,7 @@ def _handle_resume(argv):
     cfg_overrides: "dict | None" = None
 
     import asyncio
-    from debate_tool.runner import resume
+    from debate_tool.resume import resume
     asyncio.run(resume(
         log_path=args.log_file,
         resume_topic_path=args.resume_topic,
@@ -119,6 +119,12 @@ def _handle_compact(argv):
         help="议题 Markdown 文件（含 compact_model 等配置）；不提供时自动在日志同目录查找",
     )
     parser.add_argument(
+        "--message",
+        "-m",
+        default="",
+        help="compact 附加指令（优先级最高，覆盖 topic/log 内嵌的 compact_message）",
+    )
+    parser.add_argument(
         "--debug",
         nargs="?",
         const=True,
@@ -135,11 +141,11 @@ def _handle_compact(argv):
     topic_path = args.topic.resolve() if args.topic else None
 
     from debate_tool.runner import compact_log
-    from debate_tool.runner import init_debug_logging
+    from debate_tool.debug_log import init_debug_logging
     debug_target = args.debug if hasattr(args, 'debug') and args.debug is not None else None
     init_debug_logging(debug_target)
 
-    compact_log(log_path, keep_last=0, token_budget=args.token_budget, topic_path=topic_path)
+    compact_log(log_path, keep_last=0, token_budget=args.token_budget, topic_path=topic_path, message=args.message)
 
 
 def _handle_live(argv):

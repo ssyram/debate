@@ -348,7 +348,7 @@ _CJK_RANGES = re.compile(
 )
 
 DEFAULT_COMPACT_TRIGGER = 0.8
-DEFAULT_COMPACT_THRESHOLD = 60_000  # token 数超过此值时主动触发 compact
+DEFAULT_COMPACT_THRESHOLD = 175_000  # token 数超过此值时主动触发 compact
 
 
 def estimate_tokens(text: str) -> int:

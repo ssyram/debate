@@ -219,26 +219,29 @@ _THINKING_RE = _re.compile(r"<thinking>(.*?)</thinking>", _re.DOTALL)
 _THINKING_OPEN_RE = _re.compile(r"<thinking>(.*)", _re.DOTALL)
 
 
+def _strip_thinking_tags(text: str) -> str:
+    """去除所有 <thinking>...</thinking> 标签及残留的 <thinking> / </thinking> 标记。"""
+    text = _re.sub(r"<thinking>.*?</thinking>", "", text, flags=_re.DOTALL)
+    text = _re.sub(r"</?thinking>", "", text)
+    return text.strip()
+
+
 def _split_cot_response(response: str) -> tuple[str, str]:
     """Split a COT response into (thinking_content, actual_reply).
 
-    If <thinking>...</thinking> tags are present, extract the thinking block and
-    treat everything after </thinking> as the actual reply (leading whitespace
-    stripped).  If only an opening <thinking> tag is found (truncated output),
-    treat everything after the tag as thinking content with empty reply.
-    If no tags are found, return ("", response) as a fallback.
+    Returns (thinking, reply).  Both non-empty = parse success.
+    Any other result (no tags, truncated, empty reply) = parse failure.
     """
     m = _THINKING_RE.search(response)
     if m:
         thinking = m.group(1).strip()
         after = response[m.end():].lstrip()
         return thinking, after
-    # Truncated: opening tag present but no closing tag (hit max_tokens mid-think)
+    # Truncated: opening tag present but no closing tag
     m_open = _THINKING_OPEN_RE.search(response)
     if m_open:
-        thinking = m_open.group(1).strip()
-        return thinking, ""
-    # Fallback: no tags found — treat entire response as reply
+        return m_open.group(1).strip(), ""
+    # No tags at all
     return "", response
 
 
@@ -253,26 +256,29 @@ async def _split_cot_or_regenerate_reply(
     base_url: str,
     api_key: str,
 ) -> tuple[str, str]:
-    """Extract (thinking, reply) from a CoT response, with truncation recovery.
+    """Extract (thinking, reply) from a CoT response.
 
-    If <thinking>...</thinking> tags are present, behaves identically to
-    _split_cot_response.  If only an opening tag is found (response truncated
-    at max_tokens), makes a follow-up LLM call in no-CoT mode: the partial
-    thinking is appended to base_sys_prompt so the model can produce the reply.
+    Parse success = both thinking and reply are non-empty.
+    Parse failure (no tags, truncated, or empty reply) = strip all <thinking>
+    tags from the full response and use the cleaned text as thinking context
+    for a second call that produces the reply.
     """
     thinking, reply = _split_cot_response(response)
-    if thinking and not reply:
-        recovery_sys = (
-            base_sys_prompt
-            + "\n\n【补全任务】你的思考过程因 token 限制被截断，以下是已完成的部分思考：\n"
-            + thinking
-            + "\n\n请基于以上思考内容直接输出辩论发言，不使用 <thinking> 标签。"
-        )
-        reply = await call_llm(
-            model, recovery_sys, user_ctx,
-            max_reply_tokens=max_reply_tokens,
-            timeout=timeout,
-            base_url=base_url,
-            api_key=api_key,
-        )
-    return thinking, reply
+    if thinking and reply:
+        return thinking, reply
+    # Parse failed — treat full response (tags stripped) as thinking context
+    cleaned = _strip_thinking_tags(response) or response
+    recovery_sys = (
+        base_sys_prompt
+        + "\n\n【补全任务】以下是你已完成的思考内容：\n"
+        + cleaned
+        + "\n\n请基于以上思考内容直接输出辩论发言，不使用 <thinking> 标签。"
+    )
+    reply = await call_llm(
+        model, recovery_sys, user_ctx,
+        max_reply_tokens=max_reply_tokens,
+        timeout=timeout,
+        base_url=base_url,
+        api_key=api_key,
+    )
+    return cleaned, reply

@@ -40,7 +40,8 @@ def _apply_overrides(cfg: dict, overrides: dict) -> None:
         cfg["judge"].update(expanded_judge)
     # 简单字段覆盖（有意排除 round1_task）
     for key in ("middle_task", "final_task", "constraints", "judge_instructions",
-                "max_reply_tokens", "timeout", "cross_exam", "early_stop", "cot"):
+                "max_reply_tokens", "timeout", "cross_exam", "early_stop", "cot",
+                "compact_threshold", "compact_message"):
         if key in overrides:
             cfg[key] = overrides[key]
 
@@ -58,7 +59,8 @@ def _describe_overrides(overrides: dict) -> str:
     """生成 config_override entry 的人类可读摘要字符串。纯函数。"""
     parts = []
     for key in ("middle_task", "final_task", "constraints", "judge_instructions",
-                "max_reply_tokens", "timeout", "cross_exam", "early_stop", "cot"):
+                "max_reply_tokens", "timeout", "cross_exam", "early_stop", "cot",
+                "compact_threshold", "compact_message"):
         if key in overrides:
             parts.append(f"更新 {key}")
     if "add_debaters" in overrides:

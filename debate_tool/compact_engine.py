@@ -536,6 +536,7 @@ async def _compact_single_debater(
     delta_entries: "list[dict]",
     prev_state: "dict | None",
     cfg: dict,
+    compact_message: str = "",
 ) -> dict:
     """Phase B 单辩手立场自更新。返回 ParticipantState dict（失败时返回 fallback）。"""
     name = debater.get("name", "未知辩手")
@@ -583,7 +584,7 @@ async def _compact_single_debater(
     failure_feedback = ""
     for attempt in range(3):
         try:
-            sys_p, usr_p = build_phase_b_prompt(debater, initial_style, delta_entries, prev_stance=prev_stance)
+            sys_p, usr_p = build_phase_b_prompt(debater, initial_style, delta_entries, prev_stance=prev_stance, compact_message=compact_message, prev_participant=prev_participant)
             # 重试时把上次失败原因追加进 user prompt，让模型有方向地修正
             if attempt > 0 and failure_feedback:
                 usr_p += (
@@ -875,6 +876,7 @@ async def _do_compact(
     cfg: dict,
     system_text: str,
     proxy_sent_counts: "dict[str, int] | None" = None,
+    compact_message: str = "",
 ) -> "tuple[dict, int]":
     """新 compact 核心函数：Phase A（公共信息）+ Phase B（辩手立场）。
 
@@ -923,7 +925,7 @@ async def _do_compact(
     phase_a_feedback = ""
     for attempt in range(3):
         try:
-            sys_p, usr_p = build_phase_a_prompt(prev_state, delta_entries)
+            sys_p, usr_p = build_phase_a_prompt(prev_state, delta_entries, compact_message=compact_message)
             # 重试时把上次失败原因追加进 user prompt，让模型有方向地修正
             if attempt > 0 and phase_a_feedback:
                 usr_p += (
@@ -1052,7 +1054,7 @@ async def _do_compact(
     dlog(f"[compact] Phase B 开始  辩手数={len(debaters)}")
     participant_states = await asyncio.gather(
         *[
-            _compact_single_debater(d, delta_entries, prev_state, cfg)
+            _compact_single_debater(d, delta_entries, prev_state, cfg, compact_message=compact_message)
             for d in debaters
         ]
     )

@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from debate_tool.core import DEFAULT_EARLY_STOP_THRESHOLD, check_convergence
-from debate_tool.runner import build_log_path, call_llm, run_cross_exam, Log
+from debate_tool.log_io import build_log_path, Log
+from debate_tool.llm_client import call_llm
+from debate_tool.cross_exam import run_cross_exam
 
 
 # ---------------------------------------------------------------------------
