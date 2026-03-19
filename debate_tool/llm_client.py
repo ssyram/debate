@@ -181,13 +181,11 @@ async def call_llm(
                 r.raise_for_status()
                 data = r.json()
                 content, finish_reason = _extract_response_text(data)
-                if finish_reason == "length" and not content.strip() and attempt < 2:
+                if finish_reason == "length" and attempt < 2:
                     dlog(
-                        f"LLM 空截断响应  model={model}  attempt={attempt}  retry_with_max_tokens={min(max(max_reply_tokens * (2 ** (attempt + 1)), 600), 12000)}"
+                        f"LLM 截断响应  model={model}  attempt={attempt}  retry_with_max_tokens={min(max(max_reply_tokens * (2 ** (attempt + 1)), 600), 16000)}"
                     )
                     continue
-                if finish_reason == "length":
-                    content += "\n\n[WARNING: output was truncated due to max_tokens limit]"
                 dlog(
                     f"LLM 响应  model={model}  finish={finish_reason}\n"
                     f"  {content[:300]}{'...' if len(content) > 300 else ''}"

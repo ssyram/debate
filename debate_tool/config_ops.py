@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .log_io import Log, build_log_path, LogFormatError  # noqa: F401
-from .topic_parser import parse_topic_file  # noqa: F401
+from .topic_parser import parse_topic_file, _expand_env  # noqa: F401
 
 ENV_BASE_URL = os.environ.get("DEBATE_BASE_URL", "").strip()
 ENV_API_KEY = os.environ.get("DEBATE_API_KEY", "").strip()
@@ -31,9 +31,13 @@ def _apply_overrides(cfg: dict, overrides: dict) -> None:
         for d in overrides["add_debaters"]:
             if d["name"] not in existing_names:
                 cfg["debaters"].append(d)
-    # judge 替换（部分覆盖）
+    # judge 替换（部分覆盖），展开 base_url / api_key 中的环境变量占位符
     if "judge" in overrides:
-        cfg["judge"].update(overrides["judge"])
+        expanded_judge = {
+            k: (_expand_env(str(v)) if k in ("base_url", "api_key") else v)
+            for k, v in overrides["judge"].items()
+        }
+        cfg["judge"].update(expanded_judge)
     # 简单字段覆盖（有意排除 round1_task）
     for key in ("middle_task", "final_task", "constraints", "judge_instructions",
                 "max_reply_tokens", "timeout", "cross_exam", "early_stop", "cot"):

@@ -41,6 +41,37 @@ from .compact_state import (
 
 _MIN_SEGMENT_CHARS = 30_000
 
+# ── PARTICIPANT_SCHEMA ────────────────────────────────────────────────────────
+# Schema-driven field definitions for fillForm.
+# Each entry is a (field_name, spec) tuple.
+# spec types:
+#   {"type": "computed", "fn": callable(ctx) -> value}
+#   {"type": "open"}
+#   {"type": "choice", "options": [...]}  OR  {"type": "choice", "fn_options": callable(ctx) -> [...]}
+#   {"type": "list", "item_schema": [(name, spec), ...]}
+PARTICIPANT_SCHEMA: "list[tuple[str, dict]]" = [
+    ("name",           {"type": "computed", "fn": lambda ctx: ctx["debater_name"]}),
+    ("active",         {"type": "computed", "fn": lambda ctx: ctx.get("prev_active", True)}),
+    ("stance_version", {"type": "computed", "fn": lambda ctx: ctx.get("prev_version", 0) + 1}),
+    ("stance",         {"type": "open"}),
+    ("core_claims",    {"type": "list", "item_schema": [
+        ("id",     {"type": "computed", "fn": lambda ctx: f"C{ctx['item_index'] + 1}"}),
+        ("text",   {"type": "open"}),
+        ("status", {"type": "choice", "options": ["active", "abandoned"]}),
+    ]}),
+    ("key_arguments",  {"type": "list", "item_schema": [
+        ("id",       {"type": "computed", "fn": lambda ctx: f"A{ctx['item_index'] + 1}"}),
+        ("claim_id", {"type": "choice", "fn_options": lambda ctx: [c["id"] for c in ctx.get("filled", {}).get("core_claims", [])]}),
+        ("text",     {"type": "open"}),
+        ("status",   {"type": "choice", "options": ["active", "abandoned"]}),
+    ]}),
+    ("abandoned_claims", {"type": "list", "item_schema": [
+        ("id",     {"type": "computed", "fn": lambda ctx: f"AC{ctx['item_index'] + 1}"}),
+        ("text",   {"type": "open"}),
+        ("reason", {"type": "open"}),
+    ]}),
+]
+
 
 def _compact_for_retry(
     entries: list[dict],
@@ -49,27 +80,35 @@ def _compact_for_retry(
     system_text: str,
 ) -> str:
     budget = int(model_max_tokens * 0.7)
-    segment_chars = max(budget * 3, _MIN_SEGMENT_CHARS)
+    _MAX_ITERATIONS = 20  # explicit limit: prevent infinite loops
 
-    while True:
+    for _iter in range(_MAX_ITERATIONS):
         result = build_compact_context(
             entries,
             token_budget=budget,
             num_debaters=num_debaters,
             system_text=system_text,
         )
-        if len(result) <= segment_chars:
+        # Use budget * 4 as the char limit (safe upper bound for mixed CJK/Latin).
+        # English: ~4 chars/token; CJK: ~1.5 chars/token — 4x is conservative.
+        char_limit = max(budget * 4, _MIN_SEGMENT_CHARS)
+        if len(result) <= char_limit:
             return result
-        segment_chars = int(segment_chars * 0.8)
-        if segment_chars < _MIN_SEGMENT_CHARS:
+        # Reduce token budget so build_compact_context produces shorter output
+        budget = int(budget * 0.8)
+        if budget * 4 < _MIN_SEGMENT_CHARS:
             raise RuntimeError(
-                f"compact 后上下文仍超限且段长已压至 {segment_chars} 字符 (<{_MIN_SEGMENT_CHARS})，"
+                f"compact 后上下文仍超限且 token budget 已压至 {budget} tokens，"
                 f"无法继续压缩。请手动 compact 或缩减辩论轮次。"
             )
         print(
-            f"  ⚠️ compact 后仍超限，段长缩至 {segment_chars}，重新压缩...",
+            f"  ⚠️ compact 后仍超限（iter={_iter+1}），budget 缩至 {budget} tokens，重新压缩...",
             file=sys.stderr,
         )
+
+    raise RuntimeError(
+        f"compact 超过最大迭代次数 {_MAX_ITERATIONS}，放弃。"
+    )
 
 
 def _parse_form_output(
@@ -127,6 +166,282 @@ def _parse_form_output(
     return None
 
 
+async def _retry_with_feedback(n: int, async_fn) -> str:
+    """最多重试 n 次，每次把上次异常信息作为 feedback 传入 async_fn(feedback: str)。
+
+    async_fn(feedback) 应返回字符串结果，或 raise 表示失败。
+    最后一次失败时异常向上穿透。
+    """
+    feedback = ""
+    last_exc: "Exception | None" = None
+    for _attempt in range(n):
+        try:
+            return await async_fn(feedback)
+        except Exception as e:
+            exc_str = str(e)
+            if "control character" in exc_str or "Invalid control" in exc_str:
+                feedback = (
+                    f"上次失败：字符串值中包含非法控制字符（如裸换行符、制表符等）。"
+                    f"请确保输出纯文本，不含任何非法控制字符。"
+                )
+            else:
+                feedback = f"上次失败：{exc_str[:150]}"
+            last_exc = e
+    raise last_exc  # type: ignore[misc]
+
+
+def _build_filled_summary(filled: dict) -> str:
+    """将已填字段摘要化为简短文字，用于 prompt 上下文。"""
+    parts = []
+    if filled.get("stance"):
+        parts.append(f"立场：{str(filled['stance'])[:80]}")
+    if filled.get("core_claims"):
+        parts.append(f"核心主张：{len(filled['core_claims'])} 条")
+    if filled.get("key_arguments"):
+        parts.append(f"关键论点：{len(filled['key_arguments'])} 条")
+    if filled.get("abandoned_claims"):
+        parts.append(f"已放弃主张：{len(filled['abandoned_claims'])} 条")
+    return "；".join(parts) if parts else "（尚无已填字段）"
+
+
+async def _fill_fields(
+    schema: "list[tuple[str, dict]]",
+    base_ctx: dict,
+    debater: dict,
+    base_url: str,
+    api_key: str,
+) -> dict:
+    """递归地按 schema 顺序填充字段，返回填充完成的 dict。
+
+    base_ctx 必须包含：
+      - debater_name: str
+      - delta_text: str（近期辩论摘要，可为空串）
+      - prev_active: bool（可选）
+      - prev_version: int（可选）
+      - filled: dict（已填字段，由本函数维护并传递给 computed fn）
+      - item_index: int（list item 时使用）
+    """
+    name = base_ctx["debater_name"]
+    filled: dict = base_ctx.get("filled", {})
+    delta_text = base_ctx.get("delta_text", "")
+
+    for field_name, spec in schema:
+        ctx = {**base_ctx, "filled": filled}
+        field_type = spec["type"]
+
+        if field_type == "computed":
+            filled[field_name] = spec["fn"](ctx)
+
+        elif field_type == "open":
+            filled_summary = _build_filled_summary(filled)
+            prompt_base = (
+                f"你是辩手「{name}」。\n"
+                f"已填信息：{filled_summary}\n"
+                f"近期辩论记录（摘要）：{delta_text[:600]}\n\n"
+                f"请填写「{field_name}」字段，用简洁文字描述。不要空白回答。"
+            )
+
+            async def _ask_open(feedback: str, _pb=prompt_base) -> str:
+                prompt = _pb
+                if feedback:
+                    prompt += f"\n（{feedback}，请重新尝试）"
+                resp = await call_llm(
+                    debater["model"], "",
+                    prompt,
+                    base_url=base_url, api_key=api_key, max_reply_tokens=800,
+                )
+                dlog(f"[fillForm open {field_name}] {resp!r}")
+                val = resp.strip()
+                if not val:
+                    raise ValueError(f"「{field_name}」回答为空")
+                return val
+
+            filled[field_name] = await _retry_with_feedback(3, _ask_open)
+
+        elif field_type == "choice":
+            # 确定有效选项
+            if "fn_options" in spec:
+                options = spec["fn_options"](ctx)
+            else:
+                options = spec["options"]
+
+            if not options:
+                # 没有有效选项（如 core_claims 为空时 claim_id 无选项）→ 跳过
+                filled[field_name] = ""
+                continue
+
+            options_str = "、".join(f"「{o}」" for o in options)
+            filled_summary = _build_filled_summary(filled)
+            prompt_base = (
+                f"你是辩手「{name}」。\n"
+                f"已填信息：{filled_summary}\n"
+                f"请为「{field_name}」选择一个值，有效选项：{options_str}。\n"
+                f"只输出选项中的一个值，不附加其他文字。"
+            )
+
+            async def _ask_choice(feedback: str, _pb=prompt_base, _opts=options) -> str:
+                prompt = _pb
+                if feedback:
+                    prompt += f"\n（{feedback}，请只回答选项之一）"
+                resp = await call_llm(
+                    debater["model"], "",
+                    prompt,
+                    base_url=base_url, api_key=api_key, max_reply_tokens=50,
+                )
+                dlog(f"[fillForm choice {field_name}] {resp!r}")
+                text = resp.strip()
+                # 宽松匹配：只要响应中包含某个选项即认为有效
+                matched = next((o for o in _opts if o in text), None)
+                if matched is None:
+                    raise ValueError(
+                        f"「{field_name}」无法解析为有效选项（回答：{text[:60]}，选项：{_opts}）"
+                    )
+                return matched
+
+            # choice 失败是 fatal：_retry_with_feedback 抛出异常，向上穿透
+            filled[field_name] = await _retry_with_feedback(3, _ask_choice)
+
+        elif field_type == "list":
+            item_schema = spec["item_schema"]
+            items: list = []
+
+            # ── askBulk ──────────────────────────────────────────────
+            bulk_ok = False
+            try:
+                filled_summary = _build_filled_summary(filled)
+                bulk_prompt = (
+                    f"你是辩手「{name}」。\n"
+                    f"已填信息：{filled_summary}\n"
+                    f"近期辩论记录（摘要）：{delta_text[:600]}\n\n"
+                    f"请列出「{field_name}」的所有条目（每条以「- 」开头，一行一条）。"
+                    f"如果没有任何条目，请回答「没有」。"
+                )
+                bulk_resp = await call_llm(
+                    debater["model"], "",
+                    bulk_prompt,
+                    base_url=base_url, api_key=api_key, max_reply_tokens=1200,
+                )
+                dlog(f"[fillForm askBulk {field_name}] {bulk_resp!r}")
+                bulk_text = bulk_resp.strip()
+
+                # 判断是否"没有"
+                _no_keywords = ("没有", "无", "暂无", "none", "no item", "nothing")
+                if any(kw in bulk_text.lower() for kw in _no_keywords):
+                    items = []
+                    bulk_ok = True
+                else:
+                    raw_lines = [
+                        line.lstrip("- ").strip()
+                        for line in bulk_text.splitlines()
+                        if line.strip() and line.strip() not in ("-",)
+                    ]
+                    if raw_lines:
+                        for idx, line_text in enumerate(raw_lines):
+                            item_ctx = {
+                                **base_ctx,
+                                "filled": dict(filled),
+                                "item_index": idx,
+                                # 为 item 的 open 字段提供"当前行内容"提示
+                                "delta_text": f"该条目内容：{line_text}\n\n" + delta_text,
+                            }
+                            item_filled = await _fill_fields(
+                                item_schema, item_ctx, debater, base_url, api_key
+                            )
+                            # 覆盖 open 字段如果已被初始化但行内容更具体
+                            # （bulk 中每行 = text 字段的初始内容，优先用行内容）
+                            if "text" not in item_filled or not item_filled["text"]:
+                                item_filled["text"] = line_text
+                            items.append(item_filled)
+                        bulk_ok = True
+                    # 若 raw_lines 为空但没有"没有"关键词：bulk 失败，走 askIterative
+            except Exception as bulk_exc:
+                dlog(f"[fillForm askBulk {field_name} failed] {bulk_exc}")
+                bulk_ok = False
+
+            # ── askIterative（bulk 失败时）────────────────────────────
+            if not bulk_ok:
+                items = []
+                idx = 0
+                # 问第一条
+                first_prompt = (
+                    f"你是辩手「{name}」。\n"
+                    f"请告诉我「{field_name}」的第一条内容是什么？\n"
+                    f"如果没有任何内容，请回答「没有」。"
+                )
+                first_resp = await call_llm(
+                    debater["model"], "",
+                    first_prompt,
+                    base_url=base_url, api_key=api_key, max_reply_tokens=600,
+                )
+                dlog(f"[fillForm askIterative {field_name} first] {first_resp!r}")
+                first_text = first_resp.strip()
+
+                _no_kw = ("没有", "无", "暂无", "none", "no item", "nothing")
+                if any(kw in first_text.lower() for kw in _no_kw):
+                    # 合法空列表
+                    items = []
+                elif not first_text:
+                    # 空响应 = fatal
+                    raise ValueError(
+                        f"「{field_name}」askIterative 第一条返回空，无法填充列表"
+                    )
+                else:
+                    # 有内容，填第一条 item
+                    item_ctx = {
+                        **base_ctx,
+                        "filled": dict(filled),
+                        "item_index": idx,
+                        "delta_text": f"该条目内容：{first_text}\n\n" + delta_text,
+                    }
+                    item_filled = await _fill_fields(
+                        item_schema, item_ctx, debater, base_url, api_key
+                    )
+                    if "text" not in item_filled or not item_filled["text"]:
+                        item_filled["text"] = first_text
+                    items.append(item_filled)
+                    idx += 1
+
+                    # 继续追问
+                    while True:
+                        next_prompt = (
+                            f"你是辩手「{name}」。\n"
+                            f"「{field_name}」还有下一条吗？\n"
+                            f"如果没有，请回答「没有」；如果有，请直接给出内容。"
+                        )
+                        next_resp = await call_llm(
+                            debater["model"], "",
+                            next_prompt,
+                            base_url=base_url, api_key=api_key, max_reply_tokens=600,
+                        )
+                        dlog(f"[fillForm askIterative {field_name} next idx={idx}] {next_resp!r}")
+                        next_text = next_resp.strip()
+                        if any(kw in next_text.lower() for kw in _no_kw):
+                            break
+                        if not next_text:
+                            break  # 空响应视为结束，不 fatal（已有第一条）
+                        item_ctx2 = {
+                            **base_ctx,
+                            "filled": dict(filled),
+                            "item_index": idx,
+                            "delta_text": f"该条目内容：{next_text}\n\n" + delta_text,
+                        }
+                        item_filled2 = await _fill_fields(
+                            item_schema, item_ctx2, debater, base_url, api_key
+                        )
+                        if "text" not in item_filled2 or not item_filled2["text"]:
+                            item_filled2["text"] = next_text
+                        items.append(item_filled2)
+                        idx += 1
+
+            filled[field_name] = items
+
+        else:
+            # 未知 spec 类型，跳过
+            dlog(f"[fillForm] 未知 spec type={field_type!r} for field {field_name!r}，跳过")
+
+    return filled
+
+
 async def _fallback_form_filling(
     debater: dict,
     initial_style: str,
@@ -136,188 +451,83 @@ async def _fallback_form_filling(
     api_key: str,
     failure_reason: str = "",
 ) -> "dict | None":
-    """
-    JSON 解析三次全失败后的渐进式降级策略（对弱模型鲁棒版）。
+    """Schema-driven fillForm 实现。
 
-    Level 1: 逐字段单问（open text）
-      - 只问 stance（开放题，任何非空返回直接用）
-      - 对 prev_participant 每个 core_claim 单独问 1/2 选择题
-      - 用 validate_participant_state 校验结果
-    Level 2: 极简兜底（不调用 LLM）
-      - stance 取 delta_entries 最后一条 content 前200字
-      - claims/arguments 全空
-    Level 3: 保留上次状态（prev_participant 不为 None）
-      - 复制 prev_participant，bump stance_version
-    Level 4: 空状态兜底（prev_participant 为 None）
-      - 返回 None，外层处理
+    按 PARTICIPANT_SCHEMA 逐字段填充 ParticipantState：
+      - computed 字段直接计算，不调 LLM
+      - open 字段：retryWithFeedback(3)，非空即通过
+      - choice 字段：retryWithFeedback(3)，解析失败 fatal（raise ValueError）
+      - list 字段：先 askBulk，失败后 askIterative
+        - askIterative 零条目但"没有"= 合法空列表
+        - askIterative 连第一条都写不出来 = fatal（raise ValueError）
 
-    返回 ParticipantState dict，或 None（让外层用 fallback）
+    fatal 路径会让 _compact_single_debater 里的外层降级到 usePrevious。
+
+    返回 ParticipantState dict，或 None（外层用 hardFallback）
     """
     name = debater.get("name", "未知辩手")
-    active_flag = prev_participant.get("active", True) if prev_participant else True
 
-    # ── Level 1: 逐字段单问（open text / 1-2 选择题） ────────────────────────────────────
-    l1_reason = ""
-    for _l1_attempt in range(3):
-        try:
-            delta_text = format_delta_entries_text(delta_entries)[:800]
-            l1_stance_prompt = f"你是辩手「{name}」。你现在的辩论立场是什么？（任意文字，200字以内）\n\n近期辩论记录：\n{delta_text}"
-            if l1_reason:
-                l1_stance_prompt += f"\n（上次失败原因：{l1_reason}，请重新尝试）"
-            stance_resp = await call_llm(
-                debater["model"], "",
-                l1_stance_prompt,
-                base_url=base_url, api_key=api_key, max_reply_tokens=300,
-            )
-            dlog(f"[compact raw fallback L1 stance] {stance_resp!r}")
-            stance = stance_resp.strip()
+    # ── fillForm 主流程 ────────────────────────────────────────────────────────
+    try:
+        delta_text = format_delta_entries_text(delta_entries)[:800]
+        base_ctx: dict = {
+            "debater_name": name,
+            "delta_text": delta_text,
+            "prev_active": prev_participant.get("active", True) if prev_participant else True,
+            "prev_version": prev_participant.get("stance_version", 0) if prev_participant else 0,
+            "filled": {},
+            "item_index": 0,
+        }
 
-            if not stance:
-                raise ValueError("stance 返回为空")
+        result = await _fill_fields(
+            PARTICIPANT_SCHEMA, base_ctx, debater, base_url, api_key
+        )
 
-            claims = []
-            if prev_participant and prev_participant.get("core_claims"):
-                for c in prev_participant["core_claims"]:
-                    claim_text = c.get("text", "")
-                    choice_resp = await call_llm(
-                        debater["model"], "",
-                        f"主张「{claim_text}」还有效吗？回答 1（有效）或 2（已放弃）",
-                        base_url=base_url, api_key=api_key, max_reply_tokens=10,
-                    )
-                    dlog(f"[compact raw fallback L1 claim] {choice_resp!r}")
-                    digit = next((ch for ch in choice_resp if ch in "12"), None)
-                    if digit == "2":
-                        claims.append({**c, "status": "abandoned"})
-                    else:
-                        claims.append({**c, "status": "active"})
+        # 最终校验
+        if not validate_participant_state(result):
+            raise ValueError(f"fillForm validate_participant_state 失败: {list(result.keys())}")
 
-            result = {
-                "name": name,
-                "active": active_flag,
-                "stance_version": (prev_participant.get("stance_version", 0) + 1) if prev_participant else 1,
-                "stance": stance,
-                "core_claims": claims,
-                "key_arguments": prev_participant.get("key_arguments", []) if prev_participant else [],
-                "abandoned_claims": prev_participant.get("abandoned_claims", []) if prev_participant else [],
-            }
-            if not validate_participant_state(result):
-                raise ValueError(f"L1 validate_participant_state 校验失败: {list(result.keys())}")
-            print(f"  ✅ {name} 降级 L1（逐字段单问）成功", file=sys.stderr)
-            return result
-        except Exception as e:
-            l1_reason = f"上次失败：{str(e)[:100]}"
-            if _l1_attempt < 2:
-                continue
-            print(f"  ⚠️ {name} 降级 L1 失败（3次全败）: {e}", file=sys.stderr)
+        print(f"  ✅ {name} fillForm（schema-driven）成功", file=sys.stderr)
+        return result
 
-    # ── Level 2: 极简兜底（不调用 LLM） ────────────────────────────────────
-    l2_reason = ""
-    for _l2_attempt in range(3):
-        try:
-            last_content = ""
-            for entry in reversed(delta_entries):
-                content = entry.get("content", "")
-                if content and content.strip():
-                    last_content = content.strip()[:200]
-                    break
-            stance_l2 = last_content if last_content else initial_style or name
+    except Exception as e:
+        print(f"  ⚠️ {name} fillForm 失败: {e}", file=sys.stderr)
 
-            result_l2 = {
-                "name": name,
-                "active": active_flag,
-                "stance_version": (prev_participant.get("stance_version", 0) + 1) if prev_participant else 1,
-                "stance": stance_l2,
-                "core_claims": [],
-                "key_arguments": [],
-                "abandoned_claims": prev_participant.get("abandoned_claims", []) if prev_participant else [],
-            }
-            print(f"  ⚠️ {name} 降级 L2（极简兜底）", file=sys.stderr)
-            return result_l2
-        except Exception as e:
-            l2_reason = f"上次失败：{str(e)[:100]}"
-            if _l2_attempt < 2:
-                continue
-            print(f"  ⚠️ {name} 降级 L2 失败（3次全败）: {e}", file=sys.stderr)
+    # ── 极简兜底（不调 LLM）────────────────────────────────────────────────────
+    try:
+        last_content = ""
+        for entry in reversed(delta_entries):
+            content = entry.get("content", "")
+            if content and content.strip():
+                last_content = content.strip()[:200]
+                break
+        stance_fallback = last_content if last_content else initial_style or name
+        active_flag = prev_participant.get("active", True) if prev_participant else True
+        result_simple = {
+            "name": name,
+            "active": active_flag,
+            "stance_version": (prev_participant.get("stance_version", 0) + 1) if prev_participant else 1,
+            "stance": stance_fallback,
+            "core_claims": [],
+            "key_arguments": [],
+            "abandoned_claims": prev_participant.get("abandoned_claims", []) if prev_participant else [],
+        }
+        print(f"  ⚠️ {name} 降级极简兜底", file=sys.stderr)
+        return result_simple
+    except Exception as e2:
+        print(f"  ⚠️ {name} 极简兜底也失败: {e2}", file=sys.stderr)
 
-    # ── Level 3: 保留上次状态 ────────────────────────────────────
-    l3_reason = ""
-    for _l3_attempt in range(3):
-        try:
-            if not prev_participant:
-                raise ValueError("无 prev_participant，无法保留上次状态")
-            print(f"  ⚠️ {name} 降级 L3（保留上次状态）", file=sys.stderr)
-            return {
-                **prev_participant,
-                "stance_version": prev_participant.get("stance_version", 0) + 1,
-                "_from_l5": True,
-            }
-        except Exception as e:
-            l3_reason = f"上次失败：{str(e)[:100]}"
-            if _l3_attempt < 2:
-                continue
-            print(f"  ⚠️ {name} 降级 L3 失败（3次全败）: {e}", file=sys.stderr)
+    # ── 保留上次状态（prev_participant） ────────────────────────────────────────
+    if prev_participant:
+        print(f"  ⚠️ {name} 降级：保留上次状态", file=sys.stderr)
+        return {
+            **prev_participant,
+            "stance_version": prev_participant.get("stance_version", 0) + 1,
+            "_from_l5": True,
+        }
 
-    # ── Level 4: 极简逐字段单问（不依赖 delta_text） ────────────────────────────────────
-    l4_reason = ""
-    for _l4_attempt in range(3):
-        try:
-            l4_stance_prompt = f"你是辩手「{name}」。\n你现在的辩论立场是什么？（任意文字，200字以内）"
-            if failure_reason:
-                l4_stance_prompt += f"\n\n（注意：{failure_reason}）"
-            if l4_reason:
-                l4_stance_prompt += f"\n（上次失败原因：{l4_reason}，请重新尝试）"
-            stance_resp = await call_llm(
-                debater["model"], "",
-                l4_stance_prompt,
-                base_url=base_url, api_key=api_key, max_reply_tokens=500,
-            )
-            dlog(f"[compact raw fallback L4 stance] {stance_resp!r}")
-            stance_text = stance_resp.strip()
-
-            if not stance_text:
-                raise ValueError("L4 stance 返回为空")
-
-            claims_l4 = []
-            if prev_participant and prev_participant.get("core_claims"):
-                all_ok = True
-                for c in prev_participant["core_claims"]:
-                    claim_text = c.get("text", "")
-                    status_resp = await call_llm(
-                        debater["model"], "",
-                        f"你是辩手「{name}」。\n主张「{claim_text}」还有效吗？\n回答 1（有效）或 2（已放弃）",
-                        base_url=base_url, api_key=api_key, max_reply_tokens=500,
-                    )
-                    dlog(f"[compact raw fallback L4 claim] {status_resp!r}")
-                    digit = next((ch for ch in status_resp if ch in "12"), None)
-                    if digit is None:
-                        all_ok = False
-                        break
-                    if digit == "2":
-                        claims_l4.append({**c, "status": "abandoned"})
-                    else:
-                        claims_l4.append({**c, "status": "active"})
-                if not all_ok:
-                    raise ValueError("L4 claim 状态解析失败，无法取到 1/2")
-
-            result_l4 = {
-                "name": name,
-                "active": active_flag,
-                "stance_version": (prev_participant.get("stance_version", 0) + 1) if prev_participant else 1,
-                "stance": stance_text,
-                "core_claims": claims_l4,
-                "key_arguments": prev_participant.get("key_arguments", []) if prev_participant else [],
-                "abandoned_claims": prev_participant.get("abandoned_claims", []) if prev_participant else [],
-            }
-            print(f"  ✅ {name} 极简单问模式成功", file=sys.stderr)
-            return result_l4
-        except Exception as e:
-            l4_reason = f"上次失败：{str(e)[:100]}"
-            if _l4_attempt < 2:
-                continue
-            print(f"  ⚠️ {name} 降级 L4 失败（3次全败）: {e}", file=sys.stderr)
-
-    # ── Level 5: 空状态（外层处理） ────────────────────────────────────
-    print(f"  ⚠️ {name} 降级 L5（无 prev，返回 None）", file=sys.stderr)
+    # ── 空状态（外层处理） ───────────────────────────────────────────────────────
+    print(f"  ⚠️ {name} 降级：无 prev，返回 None", file=sys.stderr)
     return None
 
 
@@ -466,7 +676,7 @@ async def _compact_single_debater(
                     if needs_check:
                         ref_notes_text = initial_style[:400] if ref_is_origin else ref_notes
                         ref_label = "初始立场" if ref_is_origin else "上一版本立场"
-                        cos_val = cos_orig if ref_is_origin else cos_rec
+                        cos_val = cos_orig if ref_is_origin else (cos_rec if cos_rec is not None else cos_orig)
 
                         current_result = result
                         for check_depth in range(2):
@@ -545,10 +755,18 @@ async def _compact_single_debater(
         except Exception as exc:
             # 若 failure_feedback 尚未被更具体的分支设置，填入通用 JSON 格式错误提示
             if not failure_feedback:
-                failure_feedback = (
-                    f"输出格式有误（{exc}），请确保输出合法 JSON，"
-                    f"字段包含：name, stance_version, stance, core_claims, key_arguments, abandoned_claims"
-                )
+                exc_str = str(exc)
+                if "control character" in exc_str or "Invalid control" in exc_str:
+                    failure_feedback = (
+                        f"JSON 解析失败：字符串值中包含非法控制字符（如裸换行符、制表符等）。"
+                        f"请确保所有字符串字段内部的换行用 \\n 转义，制表符用 \\t 转义，"
+                        f"不要在 JSON 字符串值中直接插入换行或其他控制字符。"
+                    )
+                else:
+                    failure_feedback = (
+                        f"输出格式有误（{exc}），请确保输出合法 JSON，"
+                        f"字段包含：name, stance_version, stance, core_claims, key_arguments, abandoned_claims"
+                    )
             if attempt < 2:
                 print(
                     f"  ⚠️ Phase B {name} attempt {attempt + 1} 失败: {exc}",
@@ -656,8 +874,12 @@ async def _do_compact(
     log: Log,
     cfg: dict,
     system_text: str,
+    proxy_sent_counts: "dict[str, int] | None" = None,
 ) -> "tuple[dict, int]":
     """新 compact 核心函数：Phase A（公共信息）+ Phase B（辩手立场）。
+
+    proxy_sent_counts: 各 proxy debater 的 sent_count 快照（key=debater name，value=sent_count）。
+      若非 None，则写入 compact_checkpoint 的 state 中，供 proxy 重启后恢复。
 
     返回 (new_state, checkpoint_seq)。
     """
@@ -698,9 +920,17 @@ async def _do_compact(
 
     phase_a_result: "dict | None" = None
 
+    phase_a_feedback = ""
     for attempt in range(3):
         try:
             sys_p, usr_p = build_phase_a_prompt(prev_state, delta_entries)
+            # 重试时把上次失败原因追加进 user prompt，让模型有方向地修正
+            if attempt > 0 and phase_a_feedback:
+                usr_p += (
+                    f"\n\n【上一次公共信息生成失败，请根据以下反馈修正后重新输出】\n"
+                    f"{phase_a_feedback}\n"
+                    f"请重新输出符合要求的 JSON。"
+                )
             dlog(f"[compact] Phase A LLM call  model={model}  url={base_url}")
             raw = await call_llm(
                 model, sys_p, usr_p,
@@ -710,11 +940,26 @@ async def _do_compact(
             parsed = json.loads(_strip_json_fence(raw))
             is_valid, errors = validate_public_info(parsed, prev_state)
             if not is_valid:
+                phase_a_feedback = f"输出 JSON 单调性校验失败：{errors}，请修正后重新输出。"
                 raise ValueError(f"Phase A 单调性校验失败: {errors}")
             phase_a_result = parsed
             dlog(f"[compact] Phase A 成功  axioms={len(parsed.get('axioms',[]))}  disputes={len(parsed.get('disputes',[]))}  pruned={len(parsed.get('pruned_paths',[]))}")
             break
         except Exception as exc:
+            # 若 phase_a_feedback 尚未被更具体的分支设置，填入通用提示
+            if not phase_a_feedback:
+                exc_str = str(exc)
+                if "control character" in exc_str or "Invalid control" in exc_str:
+                    phase_a_feedback = (
+                        f"JSON 解析失败：字符串值中包含非法控制字符（如裸换行符、制表符等）。"
+                        f"请确保所有字符串字段内部的换行用 \\n 转义，制表符用 \\t 转义，"
+                        f"不要在 JSON 字符串值中直接插入换行或其他控制字符。"
+                    )
+                else:
+                    phase_a_feedback = (
+                        f"输出格式有误（{exc}），请确保输出合法 JSON，"
+                        f"字段包含：topic, axioms, disputes, pruned_paths"
+                    )
             dlog(f"[compact] Phase A attempt {attempt+1} 失败: {exc}")
             if attempt < 2:
                 print(
@@ -741,18 +986,36 @@ async def _do_compact(
         delta_text_brief = format_delta_entries_text(delta_entries)[:3000]
 
         async def _fetch_field(field_name: str, field_hint: str, fallback_val):
-            try:
-                r = await call_llm(
-                    model,
-                    "你是辩论状态提取器。只输出要求的 JSON 字段，不附加任何文字。",
-                    f"{delta_text_brief}\n\n请提取「{field_name}」字段，{field_hint}。只输出该字段的 JSON 值。",
-                    base_url=base_url, api_key=api_key, max_reply_tokens=1000,
-                )
-                dlog(f"[compact raw _fetch_field({field_name!r})] {r!r}")
-                return json.loads(_strip_json_fence(r))
-            except Exception as e:
-                print(f"  ⚠️ Phase A 降级字段 {field_name} 失败: {e}", file=sys.stderr)
-                return fallback_val
+            field_feedback = ""
+            for _attempt in range(3):
+                try:
+                    usr = f"{delta_text_brief}\n\n请提取「{field_name}」字段，{field_hint}。只输出该字段的 JSON 值。"
+                    if _attempt > 0 and field_feedback:
+                        usr += (
+                            f"\n\n【上一次提取失败，请根据以下反馈修正后重新输出】\n"
+                            f"{field_feedback}\n"
+                            f"请重新输出符合要求的 JSON。"
+                        )
+                    r = await call_llm(
+                        model,
+                        "你是辩论状态提取器。只输出要求的 JSON 字段，不附加任何文字。",
+                        usr,
+                        base_url=base_url, api_key=api_key, max_reply_tokens=1000,
+                    )
+                    dlog(f"[compact raw _fetch_field({field_name!r})] {r!r}")
+                    return json.loads(_strip_json_fence(r))
+                except Exception as e:
+                    exc_str = str(e)
+                    if "control character" in exc_str or "Invalid control" in exc_str:
+                        field_feedback = (
+                            f"JSON 解析失败：字符串值中包含非法控制字符（如裸换行符、制表符等）。"
+                            f"请确保所有字符串字段内部的换行用 \\n 转义，制表符用 \\t 转义，"
+                            f"不要在 JSON 字符串值中直接插入换行或其他控制字符。"
+                        )
+                    else:
+                        field_feedback = f"输出格式有误（{e}），请确保输出合法 JSON，{field_hint}。"
+                    print(f"  ⚠️ Phase A 降级字段 {field_name} attempt {_attempt+1} 失败: {e}", file=sys.stderr)
+            return fallback_val
 
         topic_val = await _fetch_field(
             "topic", '格式: {"current_formulation": "...", "notes": null}', _fallback_topic
@@ -795,13 +1058,19 @@ async def _do_compact(
     )
 
     # ── 合并与存储 ────────────────────────────────────────────────
+    # Derive compact_version by counting existing checkpoints (1-based)
+    compact_version = (
+        sum(1 for e in log.entries if e.get("tag") == "compact_checkpoint") + 1
+    )
     new_state = {
         **phase_a_result,
         "participants": list(participant_states),
-        "compact_version": 1,
+        "compact_version": compact_version,
         "covered_seq_end": delta_entries[-1]["seq"],
         "prev_compact_seq": prev_compact_seq,
     }
+    if proxy_sent_counts is not None:
+        new_state["proxy_sent_counts"] = proxy_sent_counts
     log.add("Compact Checkpoint", "", "compact_checkpoint", extra={"state": new_state})
 
     checkpoint_seq = next(
