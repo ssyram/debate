@@ -12,7 +12,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from debate_tool.runner import LOG_FILE_SUFFIX, LOG_FORMAT, LOG_VERSION
+from debate_tool.log_io import LOG_FILE_SUFFIX, LOG_FORMAT, LOG_VERSION
 
 LEGACY_LOG_FILE_SUFFIX = "_debate_log.md"
 
@@ -115,9 +115,10 @@ def _load_json_log_payload(path: Path) -> tuple[dict, list[dict]]:
         raise ValueError(
             f"{path} format 非法，期望 {LOG_FORMAT!r}，实际 {payload.get('format')!r}"
         )
-    if payload.get("version") != LOG_VERSION:
+    version = payload.get("version")
+    if version not in (1, LOG_VERSION):
         raise ValueError(
-            f"{path} version 非法，期望 {LOG_VERSION}，实际 {payload.get('version')!r}"
+            f"{path} version 非法，支持 1 或 {LOG_VERSION}，实际 {version!r}"
         )
 
     title = payload.get("title")

@@ -38,6 +38,35 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 
+def _load_sent_count_from_compact_state(compact_state_file: str, debater_name: str) -> int:
+    """从 compact_state.json 读取该 debater 上次的 sent_count，用于 proxy 重启后恢复。
+
+    若文件不存在、格式不对或找不到对应 debater，返回 0（不影响启动）。
+    compact_state.json 由 debate_tool/log_io.py 在 compact_checkpoint 时写入，
+    结构为 compact state dict，其中 proxy_sent_counts[debater_name] = int。
+    """
+    if not compact_state_file:
+        return 0
+    try:
+        with open(compact_state_file, encoding="utf-8") as f:
+            state = json.load(f)
+        counts = state.get("proxy_sent_counts", {})
+        count = counts.get(debater_name, 0)
+        if isinstance(count, int) and count > 0:
+            print(
+                f"[opencode_proxy] Restored sent_count={count} for '{debater_name}' "
+                f"from {compact_state_file}",
+                file=sys.stderr,
+            )
+            return count
+    except Exception as exc:
+        print(
+            f"[opencode_proxy] WARNING: could not load sent_count from {compact_state_file}: {exc}",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def _oc_request(
     opencode_url: str,
     method: str,
@@ -55,7 +84,7 @@ def _oc_request(
         url,
         data=data,
         method=method,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read().decode()
@@ -81,6 +110,7 @@ class OpenCodeProxy:
         poll_interval: float,
         port: int,
         agent: str = "build",
+        compact_state_file: str = "",
     ) -> None:
         self.opencode_url = opencode_url
         self.provider_id = provider_id
@@ -96,12 +126,109 @@ class OpenCodeProxy:
 
         self._session_id: str | None = None
         self._sandbox_dir: str | None = None
-        self._sent_count: int = 0
+        self._sent_count: int = _load_sent_count_from_compact_state(compact_state_file, debater_name)
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Session management
     # ------------------------------------------------------------------
+
+    def _delete_session(self, session_id: str) -> None:
+        """Best-effort delete an OpenCode session. Errors are logged but not raised."""
+        try:
+            _oc_request(
+                self.opencode_url, "DELETE", f"/session/{session_id}", timeout=10.0
+            )
+            print(
+                f"[opencode_proxy] Session deleted: {session_id}",
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(
+                f"[opencode_proxy] WARNING: failed to delete session {session_id}: {exc}",
+                file=sys.stderr,
+            )
+
+    def reset(self, compact_state_md: str) -> dict:
+        """
+        Close the current OpenCode session and create a fresh one.
+
+        The compact_state_md string is injected into the new session as the
+        first message so the model starts with an up-to-date debate snapshot.
+
+        Returns a dict with {"status": "ok", "old_session": ..., "new_session": ...}.
+        Called by debate-tool after a compact checkpoint is written.
+        """
+        with self._lock:
+            old_session_id = self._session_id
+
+            # --- Tear down old session (best-effort) ---
+            if old_session_id is not None:
+                self._delete_session(old_session_id)
+                self._session_id = None
+                self._sent_count = 0
+                self._sandbox_dir = None
+
+            # --- Create fresh session ---
+            new_session_id = self._ensure_session()
+
+            # --- Inject compact_state as first message ---
+            if compact_state_md.strip():
+                inject_text = (
+                    "【辩论状态快照 — 由 debate-tool compact 生成】\n\n"
+                    + compact_state_md
+                    + "\n\n"
+                    "以上是本场辩论的最新状态压缩摘要。请以此为基础继续辩论，"
+                    "不要重新提出已标记为「已否决路径」的论点。"
+                )
+                try:
+                    post_body: dict[str, Any] = {
+                        "parts": [{"type": "text", "text": inject_text}],
+                        "model": {
+                            "providerID": self.provider_id,
+                            "modelID": self.model_id,
+                        },
+                        "system": (
+                            "You are participating in a structured debate session.\n"
+                            f"Your writable sandbox directory (for scratch files only): {self._sandbox_dir}\n"
+                            "Do not write or modify files outside that directory.\n\n"
+                        ),
+                        "agent": self.agent,
+                    }
+                    _oc_request(
+                        self.opencode_url,
+                        "POST",
+                        f"/session/{new_session_id}/message",
+                        body=post_body,
+                        timeout=self.timeout + 60,
+                    )
+                    # Wait briefly then bump sent_count so the next real call
+                    # does not re-send the inject message.
+                    # We treat this injected exchange as "1 message already sent"
+                    # but we do NOT want it counted in _sent_count (which tracks
+                    # how many of the debate_tool messages array we have sent).
+                    # Keeping _sent_count=0 is correct: the next call_llm will
+                    # send from messages[0:], and the inject lives only in the
+                    # OpenCode session history — not in the messages array.
+                    print(
+                        f"[opencode_proxy] Compact state injected into session {new_session_id}",
+                        file=sys.stderr,
+                    )
+                except Exception as exc:
+                    print(
+                        f"[opencode_proxy] WARNING: failed to inject compact state: {exc}",
+                        file=sys.stderr,
+                    )
+
+        print(
+            f"[opencode_proxy] Reset complete: {old_session_id} → {new_session_id}",
+            file=sys.stderr,
+        )
+        return {
+            "status": "ok",
+            "old_session": old_session_id,
+            "new_session": new_session_id,
+        }
 
     def _make_sandbox(self) -> str:
         """Create a unique per-session sandbox directory and return its path."""
@@ -242,12 +369,34 @@ class OpenCodeProxy:
         with self._lock:
             session_id = self._ensure_session()
 
-            # --- Build delta text to send ---
-            # If the incoming conversation is no longer than what we already
-            # sent, this is a new debate run re-using the same session (续跑).
-            # Reset sent_count so we send just the latest user message.
-            if len(messages) <= self._sent_count:
+            # --- Handle retry (len == sent_count) ---
+            # When debate_tool retries the same request (e.g. after BrokenPipeError),
+            # sent_count was already incremented before the response write failed.
+            # Don't create a duplicate message; wait for / return the existing reply.
+            if len(messages) == self._sent_count:
+                current_msgs = self._get_messages(session_id)
+                # Anchor: index of last user message in the current session
+                last_user_idx = 0
+                for _i, _m in enumerate(current_msgs):
+                    if (_m.get("info", {}).get("role", "") or _m.get("role", "")) == "user":
+                        last_user_idx = _i
+                cached_text = self._wait_for_reply(session_id, last_user_idx)
+                return {
+                    "id": f"chatcmpl-{request_id}",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": f"{provider_id}/{model_id}",
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": cached_text}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                }
+
+            # --- Handle 续跑 (len < sent_count) ---
+            # Shorter history than what was sent = new debate run re-using the
+            # same session. Reset sent_count to send just the latest user message.
+            if len(messages) < self._sent_count:
                 self._sent_count = max(0, len(messages) - 1)
+
+            # --- Build delta text to send ---
             delta_messages = messages[self._sent_count :]
             system_text: str | None = None
             delta_parts: list[str] = []
@@ -444,6 +593,33 @@ def make_handler(proxy: OpenCodeProxy):
                 self._send_json(404, {"error": "not found"})
 
         def do_POST(self):  # noqa: N802
+            if self.path == "/reset":
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                try:
+                    req_data = json.loads(raw.decode()) if raw.strip() else {}
+                except json.JSONDecodeError as exc:
+                    self._send_json(400, {"error": f"invalid JSON: {exc}"})
+                    return
+
+                compact_state_md = req_data.get("compact_state", "")
+                print(
+                    f"[opencode_proxy] POST /reset — compact_state length={len(compact_state_md)}",
+                    file=sys.stderr,
+                )
+                try:
+                    result = proxy.reset(compact_state_md)
+                    self._send_json(200, result)
+                except Exception as exc:
+                    import traceback
+                    msg = f"Reset failed: {exc}"
+                    print(
+                        f"[opencode_proxy] ERROR: {msg}\n{traceback.format_exc()}",
+                        file=sys.stderr,
+                    )
+                    self._send_json(500, {"error": {"message": msg, "type": "reset_error"}})
+                return
+
             if self.path not in (
                 "/chat/completions",
                 "/v1/chat/completions",
@@ -591,6 +767,12 @@ def parse_args() -> argparse.Namespace:
         default=2.0,
         help="Seconds between status/message polls",
     )
+    parser.add_argument(
+        "--compact-state-file",
+        default="",
+        help="Path to {topic_stem}_compact_state.json. If provided, proxy restores "
+             "sent_count for this debater from the latest compact checkpoint on startup.",
+    )
     return parser.parse_args()
 
 
@@ -615,6 +797,7 @@ def main() -> None:
         poll_interval=args.poll_interval,
         port=args.port,
         agent=args.agent,
+        compact_state_file=args.compact_state_file,
     )
 
     # Print config summary to stderr
@@ -631,11 +814,19 @@ def main() -> None:
     print(f"  CWD            : {cwd}", file=sys.stderr)
     print(f"  Timeout        : {args.timeout}s", file=sys.stderr)
     print(f"  Poll interval  : {args.poll_interval}s", file=sys.stderr)
+    print(f"  Compact state  : {args.compact_state_file or '(not set)'}", file=sys.stderr)
+    print(f"  Initial sent   : {proxy._sent_count}", file=sys.stderr)
     print("  Session        : (lazy — created on first request)", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
 
     handler_class = make_handler(proxy)
-    server = http.server.HTTPServer(("0.0.0.0", args.port), handler_class)
+
+    import socketserver as _ss
+
+    class _ThreadingHTTPServer(_ss.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True  # 主进程退出时子线程自动结束
+
+    server = _ThreadingHTTPServer(("0.0.0.0", args.port), handler_class)
 
     # Print ready line to stdout (machine-readable)
     print(f"Proxy ready at http://localhost:{args.port}", flush=True)
