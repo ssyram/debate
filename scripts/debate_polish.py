@@ -49,6 +49,40 @@ def run_silent(cmd):
     dlog(f"$ {' '.join(map(str, cmd))}")
     subprocess.run(cmd, check=True)
 
+def run_with_heartbeat(cmd, max_attempts=3, stall_timeout=300):
+    import time, threading
+    for attempt in range(1, max_attempts + 1):
+        dlog(f"$ {' '.join(map(str, cmd))}" + (f"  (attempt {attempt}/{max_attempts})" if attempt > 1 else ""))
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        last_active = [time.monotonic()]
+        done = [False]
+
+        def _reader():
+            for line in proc.stdout:
+                print(line, end="", flush=True)
+                last_active[0] = time.monotonic()
+            done[0] = True
+
+        t = threading.Thread(target=_reader, daemon=True)
+        t.start()
+
+        killed = False
+        while not done[0]:
+            time.sleep(10)
+            if time.monotonic() - last_active[0] > stall_timeout:
+                dlog(f"  no output for {stall_timeout}s, killing (attempt {attempt}/{max_attempts})")
+                proc.kill()
+                killed = True
+                break
+
+        t.join()
+        rc = proc.wait()
+        if rc == 0 and not killed:
+            return
+        dlog(f"  {'stalled' if killed else f'exited code {rc}'}, attempt {attempt}/{max_attempts}")
+
+    raise RuntimeError(f"Command failed after {max_attempts} attempts: {' '.join(map(str, cmd))}")
+
 
 # ── dry-run ────────────────────────────────────────────────────────────────────
 
@@ -102,24 +136,46 @@ def init_state(args):
 
 # ── Step A: run / resume ───────────────────────────────────────────────────────
 
+def _planned_log(pd):
+    return pd / "log.json"
+
+def _planned_summary(pd):
+    return pd / "summary.md"
+
 def _debate_cmd(args, state, i, pd):
     """run 模式首轮跑全新辩论；其余均为 resume。
     resume_first 模式首轮用用户指定的 resume_topic；后续轮用 pd/resume_{i}.md。"""
+    summary_args = ["--output-summary", str(_planned_summary(pd))]
     if args.mode == "run" and i == 1:
-        return ["python3", "-m", "debate_tool", "run", str(args.input)]
+        return ["python3", "-m", "debate_tool", "run", str(args.input),
+                "--output", str(_planned_log(pd))] + summary_args
     rt = args.resume_first if (args.mode == "resume_first" and i == 1) else pd / f"resume_{i}.md"
-    return ["python3", "-m", "debate_tool", "resume", str(state["log"]), str(rt)]
+    return ["python3", "-m", "debate_tool", "resume", str(state["log"]), str(rt)] + summary_args
+
+
+_FAIL_MARKERS = ["[调用失败", "调用失败:", "Request URL is missing"]
+
+def _check_summary_or_die(summary_path):
+    if not summary_path.exists():
+        sys.exit(f"❌ Summary 文件不存在: {summary_path}")
+    text = summary_path.read_text(encoding="utf-8")
+    for marker in _FAIL_MARKERS:
+        if marker in text:
+            sys.exit(f"❌ 生成失败，中止 polish。\n  {summary_path}\n  内容前 200 字: {text[:200]}")
+
 
 def step_a(args, state, i, pd):
     dlog(f"[{i}] Step A: debate")
     cmd   = _debate_cmd(args, state, i, pd)
     lines = dry(cmd) if args.dry_run else capture_run(cmd)
-    # run 模式首轮才需要从输出解析 log 路径；resume 模式 log 路径始终不变
     if args.mode == "run" and i == 1:
-        state["log"] = Path(f"<dry-log-1.json>") if args.dry_run else parse_log(lines, args.input)
-    state["summaries"].append(
-        Path(f"<dry-summary-{i}.md>") if args.dry_run else parse_summary(lines, state["log"])
-    )
+        state["log"] = Path(f"<dry-log-1.json>") if args.dry_run else _planned_log(pd)
+    summary = _planned_summary(pd)
+    if args.dry_run:
+        state["summaries"].append(summary)
+        return
+    _check_summary_or_die(summary)
+    state["summaries"].append(summary)
 
 def maybe_step_a(args, state, i, pd):
     """check_first 首轮：把给定 summary 直接注入 state，跳过 debate 运行。其余轮正常走 step_a。"""
@@ -146,13 +202,17 @@ def build_prompt(summary, pd, i):
            - ## 中严重度
            - ## 低严重度
            每条格式：`- [类型] Px vs Py / Px依赖B：一句话说明`
+
+        **如果 {summary} 找不到文件或者运行失败直接拒绝执行，不要犹豫**
         """)
 
 def step_b(args, state, i, pd):
     dlog(f"[{i}] Step B: finegrained-check on {state['summaries'][-1].name}")
     state["issues"].append(pd / f"issues_{i}.md")
-    if args.dry_run: return dry([args.claude_bin, "-p", "<finegrained-prompt>"])
-    run_silent([args.claude_bin, "--dangerously-skip-permissions", "-p", build_prompt(state["summaries"][-1], pd, i)])
+    prompt = build_prompt(state["summaries"][-1], pd, i)
+    cmd = _build_check_cmd(args, prompt) if not args.dry_run else _build_check_cmd(args, "<finegrained-prompt>")
+    if args.dry_run: return dry(cmd)
+    run_with_heartbeat(cmd)
 
 
 # ── Step C / D: generate resume topic ─────────────────────────────────────────
@@ -217,23 +277,77 @@ COMPACT_REFINE_MSG = (
 
 # ── Refine helpers ─────────────────────────────────────────────────────────────
 
-def claude_call(args, prompt):
-    """执行 claude --dangerously-skip-permissions [-p prompt]，可指定 model。"""
+def _write_prompt_file(prompt):
+    import tempfile, os
+    fd, path = tempfile.mkstemp(suffix=".md", prefix="polish_prompt_")
+    os.write(fd, prompt.encode())
+    os.close(fd)
+    return path
+
+def _build_llm_cmd(args, prompt, *, model=None):
+    """构建 LLM CLI 命令。支持 claude 和 opencode 两种后端。"""
+    if getattr(args, 'use_opencode', False):
+        pfile = _write_prompt_file(prompt)
+        cmd = ["opencode", "run"]
+        m = model or getattr(args, 'refine_model', None)
+        if m:
+            cmd += ["-m", m]
+        cmd += ["-f", pfile, "Read and execute the instructions in the attached file exactly."]
+        return cmd
     cmd = [args.claude_bin, "--dangerously-skip-permissions"]
-    if hasattr(args, 'refine_model') and args.refine_model:
-        cmd += ["--model", args.refine_model]
+    m = model or getattr(args, 'refine_model', None)
+    if m:
+        cmd += ["--model", m]
     cmd += ["-p", prompt]
+    return cmd
+
+def _build_check_cmd(args, prompt):
+    """构建 finegrained-check 命令（step_b 用，不指定 refine_model）。"""
+    if getattr(args, 'use_opencode', False):
+        pfile = _write_prompt_file(prompt)
+        cmd = ["opencode", "run"]
+        if getattr(args, 'opencode_model', None):
+            cmd += ["-m", args.opencode_model]
+        cmd += ["-f", pfile, "Read and execute the instructions in the attached file exactly."]
+        return cmd
+    return [args.claude_bin, "--dangerously-skip-permissions", "-p", prompt]
+
+def claude_call(args, prompt):
     if args.dry_run:
-        dry(cmd)
+        dry(_build_llm_cmd(args, prompt))
         return ""
+    if getattr(args, 'use_opencode', False):
+        return _http_call(args.refine_model, prompt)
+    cmd = _build_llm_cmd(args, prompt)
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return result.stdout
+
+def _http_call(model, prompt):
+    import urllib.request, json as _json, os
+    url = os.environ.get("DEBATE_BASE_URL", "").rstrip("/")
+    key = os.environ.get("DEBATE_API_KEY", "")
+    payload = _json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 8000,
+    }).encode()
+    req = urllib.request.Request(url, data=payload, headers={
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    })
+    with urllib.request.urlopen(req, timeout=300) as r:
+        data = _json.loads(r.read())
+    return data["choices"][0]["message"]["content"]
 
 def step_b2_compact(args, state):
     dlog("Step B2: compact")
     cmd = ["python3", "-m", "debate_tool", "compact", str(state["log"]), "--message", COMPACT_REFINE_MSG]
+    if args.mode == "run" and args.input.suffix == ".md":
+        cmd += ["--topic", str(args.input)]
     if args.dry_run: return dry(cmd)
-    run_silent(cmd)
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        dlog("Step B2: compact failed (skipped)")
 
 def build_resume_judge_body(current_design_text, issues_text):
     parts = ["# 本轮目的\n\n基于 finegrained-check 识别的问题，各辩手聚焦以下待裁定问题，逐一给出立场和方案。\n如对已裁定内容有异议，请明确声明「不服」并给出理由。\n"]
@@ -478,10 +592,19 @@ def parse_args():
     p.add_argument("--issues-first",   type=Path, default=None, metavar="ISSUES",       dest="issues_first")
     p.add_argument("--iterations",     type=int,  default=3,    metavar="N")
     p.add_argument("--dry-run",        action="store_true",                   dest="dry_run")
+    p.add_argument("--topic",          type=Path, default=None, metavar="TOPIC", dest="topic",
+                   help="Topic .md file (for compact; auto-inferred from input if .md)")
     p.add_argument("--claude-bin",     default="claude", metavar="PATH",      dest="claude_bin")
     p.add_argument("--inner-max",      type=int,  default=2,    metavar="M",  dest="inner_max")
-    p.add_argument("--refine-model",   default="claude-haiku-4-5-20251001", metavar="MODEL", dest="refine_model")
-    return p.parse_args()
+    p.add_argument("--refine-model",   default=None, metavar="MODEL", dest="refine_model")
+    p.add_argument("--use-opencode",   action="store_true",                   dest="use_opencode",
+                   help="Use opencode instead of claude for finegrained-check and refine steps")
+    p.add_argument("--opencode-model", default="yunwu/qwen3.5-plus", metavar="MODEL", dest="opencode_model",
+                   help="Model for opencode finegrained-check (default: yunwu/qwen3.5-plus)")
+    args = p.parse_args()
+    if args.refine_model is None:
+        args.refine_model = "yunwu/qwen3.5-plus" if args.use_opencode else "claude-haiku-4-5-20251001"
+    return args
 
 def main():
     args = parse_args()

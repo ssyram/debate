@@ -200,7 +200,8 @@ def main(argv=None):
     init_debug_if_needed(args)
     print_banner(cfg)
     from debate_tool.run import run
-    asyncio.run(run(cfg, args.topic.resolve(), cot_length=args.cot_length, log_path=resolve_log_path(args)))
+    summary_path = args.output_summary.resolve() if args.output_summary else None
+    asyncio.run(run(cfg, args.topic.resolve(), cot_length=args.cot_length, log_path=resolve_log_path(args), summary_path=summary_path, no_judge=args.no_judge))
 
 
 def init_debug_if_needed(args):
@@ -218,6 +219,8 @@ def apply_cli_overrides(cfg, args):
         cfg["early_stop"] = args.early_stop
     if args.rounds is not None:
         cfg["rounds"] = args.rounds
+    if getattr(args, 'no_judge', False):
+        cfg["no_judge"] = True
     cfg.setdefault("cross_exam", 0)
     cfg.setdefault("early_stop", 0.0)
 
@@ -273,6 +276,8 @@ def parse_run_args(argv):
     ap.add_argument("--early-stop", nargs="?", type=float, const=DEFAULT_EARLY_STOP_THRESHOLD, default=None, metavar="T", help="启用收敛早停")
     ap.add_argument("--cot", "--think", dest="cot_length", nargs="?", type=int, const=0, default=None, metavar="LENGTH", help="为辩手启用思考空间 (CoT)")
     ap.add_argument("--output", type=Path, default=None, metavar="LOG_FILE", help="指定输出日志文件路径")
+    ap.add_argument("--output-summary", type=Path, default=None, metavar="SUMMARY_FILE", dest="output_summary", help="指定总结文件输出路径")
+    ap.add_argument("--no-judge", action="store_true", dest="no_judge", help="跳过裁判总结阶段")
     ap.add_argument("--debug", nargs="?", const=True, default=None, metavar="DEBUG_LOG", help="开启 debug 日志")
     return ap.parse_args(argv)
 

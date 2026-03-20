@@ -257,7 +257,8 @@ def validate_topic_log_consistency(log: "Log", *, force: bool = False) -> None:
     actual = {e["name"] for e in log.all_entries() if e.get("tag") == "debater"}
     in_plan_not_spoke = planned - actual
     spoke_not_in_plan = actual - planned
-    if in_plan_not_spoke:
+    # Only warn if there are truly no entries — after compact, speeches are in checkpoint content
+    if in_plan_not_spoke and not log.entries and not log._archived_entries:
         print(f"⚠️  计划辩手未发言：{in_plan_not_spoke}", file=sys.stderr)
     if spoke_not_in_plan:
         print(f"⚠️  发言辩手不在当前计划中：{spoke_not_in_plan}（可能已通过 drop_debaters 移除）", file=sys.stderr)

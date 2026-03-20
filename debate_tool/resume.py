@@ -94,6 +94,8 @@ async def resume(
     guide_prompt: str = "",
     force: bool = False,
     cot_length: "int | None" = None,
+    summary_path: "Path | None" = None,
+    no_judge: bool = False,
 ) -> None:
     dlog(f"[resume] log={log_path} rounds={extra_rounds} guide={bool(guide_prompt)}")
     log, cfg = load_and_patch(log_path, resume_topic_path, cfg_overrides, cross_exam, cot_length, force)
@@ -102,5 +104,8 @@ async def resume(
         print("\n💬 已注入观察者消息")
     brnd, xrounds = patch_resume_cfg(cfg, log, extra_rounds, guide_prompt, cross_exam, cot_length)
     await core_loop(cfg, log, brnd, cfg.get("cot", cot_length), xrounds)
+    if no_judge or cfg.get("no_judge"):
+        print(f"\n✅ 续跑完成（跳过裁判）。日志: {log.path}")
+        return
     summary = await judge_phase(cfg, log)
-    write_summary_resume(log, cfg, summary)
+    write_summary_resume(log, cfg, summary, summary_path=summary_path)

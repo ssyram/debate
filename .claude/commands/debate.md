@@ -33,6 +33,19 @@ python3 -m debate_tool resume topic_debate_log.json phase2.md
 # 续跑（带引导，不追加辩论，只跑 judge）
 python3 -m debate_tool resume topic_debate_log.json --rounds 0 --message '...'
 
+# 跳过裁判（辩论正常跑，不执行 judge phase）
+python3 -m debate_tool run topic.md --no-judge
+python3 -m debate_tool resume topic_debate_log.json --rounds 1 --no-judge
+
+# 只注入配置、什么都不做（用于向 log 写入新字段，如 compact_model）
+python3 -m debate_tool resume topic_debate_log.json inject_config.md --rounds 0 --no-judge
+# inject_config.md 格式：
+# ---
+# compact_model: gpt-5.4-nano
+# compact_check_model: gpt-5.4-nano
+# no_judge: true   # 也可以在 topic YAML 里直接配置
+# ---
+
 # 压缩日志
 python3 -m debate_tool compact topic_debate_log.json
 
@@ -51,7 +64,7 @@ Resume Topic 文件（.md）用于 `resume` 命令的第二个可选位置参数
 - 覆盖记录为 `config_override` entry，**持久累积**：下次 resume 自动继承
 - CLI 参数（`--cross-exam`、`--cot`）是**临时覆盖**，不记入 log
 
-支持的 override 字段：`middle_task`, `final_task`, `constraints`, `judge_instructions`, `add_debaters`, `drop_debaters`, `judge`, `cross_exam`, `max_reply_tokens`, `cot`
+支持的 override 字段：`middle_task`, `final_task`, `constraints`, `judge_instructions`, `add_debaters`, `drop_debaters`, `judge`, `cross_exam`, `max_reply_tokens`, `cot`, `no_judge`, `compact_model`, `compact_check_model`
 > `add_debaters`/`drop_debaters` 需配合 `--force`；`--guide` 是 CLI 专用的轻量指引（不持久化到 log，替换本次续跑每轮的 middle_task）
 
 所有命令在 `$DEBATE_TOOL_DIR` 目录下执行（即 debate-tool 安装目录）。

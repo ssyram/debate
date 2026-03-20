@@ -5,7 +5,7 @@ This is the debate-tool project — a multi-model debate framework.
 ## Key Files
 
 - `debate_tool/__main__.py` — Unified CLI router (subcommands: `run`, `build`)
-- `debate_tool/runner.py` — Debate engine. Usage: `debate-tool run <topic.md> [--rounds N] [--dry-run] [--cross-exam [N]] [--early-stop] [--cot[=LENGTH]]` / `debate-tool resume <log.json> [resume_topic.md] [--rounds N] [--message MSG] [--guide PROMPT] [--cross-exam [N]] [--cot [N]] [--force]`
+- `debate_tool/runner.py` — Debate engine. Usage: `debate-tool run <topic.md> [--rounds N] [--dry-run] [--cross-exam [N]] [--early-stop] [--cot[=LENGTH]] [--output LOG] [--output-summary SUMMARY] [--no-judge]` / `debate-tool resume <log.json> [resume_topic.md] [--rounds N] [--message MSG] [--guide PROMPT] [--cross-exam [N]] [--cot [N]] [--force] [--no-judge] [--output-summary SUMMARY]`
 - `debate_tool/wizard.py` — TUI wizard (14-step curses state machine)
 - `debate_tool/core.py` — Defaults, constants, mode presets, convergence check, YAML generation
 - `template.md` — Topic file template with all fields documented

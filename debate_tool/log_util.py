@@ -17,18 +17,18 @@ def save_replies(log, debaters, results):
     log._flush()
 
 
-def write_summary_file(out_dir, stem, title, summary, log):
+def write_summary_file(out_dir, stem, title, summary, log, *, summary_path=None):
     dlog(f"[write_summary] stem={stem}")
-    sp = out_dir / f"{stem}{SUMMARY_FILE_SUFFIX}"
+    sp = Path(summary_path) if summary_path else out_dir / f"{stem}{SUMMARY_FILE_SUFFIX}"
     sp.write_text(f"# {title} 裁判总结\n\n> {datetime.now().isoformat()}\n\n{summary}", encoding="utf-8")
     log.add(log.title or title, summary, "summary")
     print(f"\n✅ 完成！ 日志: {log.path} | 总结: {sp}")
 
 
-def write_summary_resume(log, cfg, summary):
+def write_summary_resume(log, cfg, summary, *, summary_path=None):
     dlog(f"[write_summary_resume]")
     stem = log.path.stem.removesuffix("_debate_log")
-    sp = log.path.parent / f"{stem}{SUMMARY_FILE_SUFFIX}"
+    sp = Path(summary_path) if summary_path else log.path.parent / f"{stem}{SUMMARY_FILE_SUFFIX}"
     sp.write_text(f"# {log.title} 裁判总结\n\n> {datetime.now().isoformat()}\n\n{summary}", encoding="utf-8")
     log.add(cfg["judge"]["name"], summary, "summary")
     print(f"\n✅ 续跑完成！ 日志: {log.path}")

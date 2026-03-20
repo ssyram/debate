@@ -49,6 +49,8 @@ def _handle_resume(argv):
     parser.add_argument("--cot", nargs="?", const=True, default=None,
                         dest="cot", help="CoT 长度")
     parser.add_argument("--force", action="store_true", help="跳过一致性校验；add/drop 辩手时必须指定")
+    parser.add_argument("--no-judge", action="store_true", dest="no_judge", help="跳过裁判总结阶段")
+    parser.add_argument("--output-summary", type=Path, default=None, metavar="SUMMARY_FILE", dest="output_summary", help="指定总结文件输出路径")
     parser.add_argument("--debug", default="", help="Debug 标志")
     args = parser.parse_args(argv)
 
@@ -82,6 +84,8 @@ def _handle_resume(argv):
         force=args.force,
         cot_length=cot_length,
         cfg_overrides=cfg_overrides,
+        summary_path=args.output_summary,
+        no_judge=args.no_judge,
     ))
 
 

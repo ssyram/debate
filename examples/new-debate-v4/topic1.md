@@ -1,7 +1,7 @@
 ---
 title: "v4 认知引擎：整体系统设计的自由探索"
 rounds: 3
-cross_exam: 2
+cross_exam: -1
 max_reply_tokens: 10000
 timeout: 7200
 base_url: ${DEBATE_BASE_URL}

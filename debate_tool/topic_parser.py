@@ -120,6 +120,7 @@ def parse_topic_file(path: Path) -> dict:
                 front = {}
             if not isinstance(front, dict):
                 front = {}
+            front = {k.replace("-", "_"): v for k, v in front.items()}
             body = parts[2].strip()
         else:
             front, body = {}, text
@@ -206,7 +207,7 @@ def parse_resume_topic(path: Path) -> tuple[dict, str]:
         try:
             raw = yaml.safe_load(fm_text)
             if isinstance(raw, dict):
-                overrides = raw
+                overrides = {k.replace("-", "_"): v for k, v in raw.items()}
         except Exception:
             pass
 

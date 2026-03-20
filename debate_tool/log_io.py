@@ -233,6 +233,7 @@ class Log:
             "entries": all_entries,
         }
         tmp = self.path.with_suffix(".tmp")
+        tmp.parent.mkdir(parents=True, exist_ok=True)
         tmp.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",

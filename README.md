@@ -113,6 +113,13 @@ debate-tool resume my_topic_debate_log.json --rounds 1 --cross-exam
 # 只触发 judge，不追加辩论（rounds=0）
 debate-tool resume my_topic_debate_log.json --rounds 0
 
+# 跳过裁判（辩论正常跑，只是不执行 judge phase）
+debate-tool run my_topic.md --no-judge
+debate-tool resume my_topic_debate_log.json --rounds 1 --no-judge
+
+# 只注入配置、什么都不做（用于向 log 写入新字段，如 compact_model）
+debate-tool resume my_topic_debate_log.json inject_config.md --rounds 0 --no-judge
+
 # 变更辩手组成（add/drop）须通过 Resume Topic 文件 + --force（防止误操作）
 debate-tool resume my_topic_debate_log.json phase2.md --force
 
@@ -200,6 +207,7 @@ export DEFAULT_DEBATE_MODELS="gpt-5.2,kimi-k2.5,MiniMax-M2.5"
 | `max_reply_tokens` | int | 6000 | 辩手单次回复最多输出的 token 数（控制输出长度，与上下文窗口无关） |
 | `cross_exam` | int | `0` | 质询轮数 (0=关, 1=R1后, -1=每轮) |
 | `early_stop` | bool/float | `false` | 收敛早停: `true` 用默认阈值 55%, 或指定 0~1 的浮点数 |
+| `no_judge` | bool | `false` | 跳过裁判总结阶段（辩论正常跑，不调用 judge）；可在 topic/resume topic YAML 中设置 |
 | `base_url` | string | env/fallback | OpenAI 兼容 API 端点 |
 | `api_key` | string | env/fallback | API 密钥 |
 | `debaters` | list | 3 个默认辩手 | 每项含 `name` / `model` / `style`，可选 `base_url` / `api_key` |
