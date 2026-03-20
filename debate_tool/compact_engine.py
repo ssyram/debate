@@ -17,7 +17,7 @@ import sys
 import httpx
 
 from .debug_log import dlog
-from .llm_client import call_llm, _strip_json_fence
+from .llm_client import call_llm, _strip_json_fence, TokenLimitError
 from .log_io import Log
 from .core import (
     build_compact_context,
@@ -877,6 +877,7 @@ async def _do_compact(
     system_text: str,
     proxy_sent_counts: "dict[str, int] | None" = None,
     compact_message: str = "",
+    cutoff_seq: "int | None" = None,
 ) -> "tuple[dict, int]":
     """新 compact 核心函数：Phase A（公共信息）+ Phase B（辩手立场）。
 
@@ -902,7 +903,9 @@ async def _do_compact(
         prev_compact_seq,
         exclude_tags=("thinking", "summary", "compact_checkpoint", "config_override"),
     )
-    dlog(f"[compact] Phase A 开始  prev_compact_seq={prev_compact_seq}  delta={len(delta_entries)} 条")
+    if cutoff_seq is not None:
+        delta_entries = [e for e in delta_entries if e["seq"] <= cutoff_seq]
+    dlog(f"[compact] Phase A 开始  prev_compact_seq={prev_compact_seq}  delta={len(delta_entries)} 条  cutoff_seq={cutoff_seq}")
 
     # 若无增量，返回已有 checkpoint 的 public_view
     if not delta_entries:
@@ -947,6 +950,8 @@ async def _do_compact(
             phase_a_result = parsed
             dlog(f"[compact] Phase A 成功  axioms={len(parsed.get('axioms',[]))}  disputes={len(parsed.get('disputes',[]))}  pruned={len(parsed.get('pruned_paths',[]))}")
             break
+        except TokenLimitError:
+            raise  # compact 窗口本身超限，交给调用方缩小窗口
         except Exception as exc:
             # 若 phase_a_feedback 尚未被更具体的分支设置，填入通用提示
             if not phase_a_feedback:

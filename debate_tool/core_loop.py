@@ -187,18 +187,74 @@ def effective_context(log, topic, rnd):
 
 # ── Side effects ─────────────────────────────────────────────────────────────
 
+def _find_compact_window_cutoff(log, target_tokens: int) -> "int | None":
+    """找到 compact 增量窗口中累积 token 数不超过 target_tokens 的最大 seq。
+    返回 None 表示第一条 entry 本身就超限（窗口无法缩减）。
+    """
+    prev_state = log.get_last_compact_state()
+    prev_seq = prev_state.get("covered_seq_end", 0) if prev_state else 0
+    delta = log.entries_since_seq(
+        prev_seq,
+        exclude_tags=("thinking", "summary", "compact_checkpoint", "config_override"),
+    )
+    if not delta:
+        return None
+    cumulative = 0
+    cutoff_seq = None
+    for e in delta:
+        tok = estimate_tokens(e.get("content", ""))
+        if cumulative + tok > target_tokens:
+            break
+        cumulative += tok
+        cutoff_seq = e["seq"]
+    return cutoff_seq
+
+
 async def do_compact(log, cfg):
     dlog(f"[do_compact] entries={len(log.entries)}")
     system_text = f"## 辩论议题\n\n{cfg.get('topic_body', log.topic)}"
     compact_message = cfg.get("compact_message", "") or ""
-    try:
-        return await _do_compact(log, cfg, system_text, compact_message=compact_message)
-    except ValueError as e:
-        print(
-            f"\n  ❌ compact 配置缺失: {e}\n  请在 topic YAML 中配置 compact_model / compact_check_model 后重试。",
-            file=sys.stderr,
-        )
-        raise
+
+    for attempt in range(8):
+        cutoff_seq = None
+        if attempt > 0:
+            threshold = cfg.get("compact_threshold", DEFAULT_COMPACT_THRESHOLD)
+            # 用新 threshold 的一半作为安全上限（prompt overhead 约 2x）
+            cutoff_seq = _find_compact_window_cutoff(log, threshold // 2)
+            if cutoff_seq is None:
+                raise RuntimeError(
+                    "compact 超限：窗口已无法再缩减（首条 entry 已超 token 上限）"
+                )
+        try:
+            return await _do_compact(
+                log, cfg, system_text,
+                compact_message=compact_message,
+                cutoff_seq=cutoff_seq,
+            )
+        except ValueError as e:
+            print(
+                f"\n  ❌ compact 配置缺失: {e}\n  请在 topic YAML 中配置 compact_model / compact_check_model 后重试。",
+                file=sys.stderr,
+            )
+            raise
+        except TokenLimitError as e:
+            old = cfg.get("compact_threshold", DEFAULT_COMPACT_THRESHOLD)
+            new_threshold = max(2000, old // 2)
+            cfg["compact_threshold"] = new_threshold
+            # 持久化到 log（通过 config_override entry）
+            log.add(
+                "@系统",
+                f"compact 超限 (model_max={e.model_max_tokens})，compact_threshold {old} → {new_threshold}",
+                "config_override",
+                extra={"overrides": {"compact_threshold": new_threshold}},
+            )
+            print(
+                f"\n  ⚠️ compact 超限 (model_max={e.model_max_tokens})，"
+                f"threshold {old} → {new_threshold}，窗口缩减重试 (attempt {attempt + 1})...",
+                file=sys.stderr,
+            )
+
+    raise RuntimeError("compact 超限：8 次窗口缩减后仍无法完成，请手动处理日志")
 
 
 # ── Predicates ───────────────────────────────────────────────────────────────
@@ -215,11 +271,12 @@ def check_early_stop(cfg, rnd, reply_texts):
 
 
 async def maybe_compact(cfg, log):
-    dlog(f"[maybe_compact] threshold={cfg.get('compact_threshold', DEFAULT_COMPACT_THRESHOLD)}")
     threshold = cfg.get("compact_threshold", DEFAULT_COMPACT_THRESHOLD)
-    if estimate_tokens(log.since(0)) <= threshold:
+    dlog(f"[maybe_compact] threshold={threshold}")
+    token_count = estimate_tokens(log.since(0))
+    if token_count <= threshold:
         return
-    print(f"\n  📦 上下文超过 {threshold} tokens，主动触发 compact...", file=sys.stderr)
+    print(f"\n  📦 上下文 {token_count} tokens 超过阈值 {threshold}，触发 compact...", file=sys.stderr)
     await do_compact(log, cfg)
 
 

@@ -546,8 +546,12 @@ def _build_initial_config(cfg: dict) -> dict:
         "cot": cfg.get("cot_length", None),
         # compact 配置：使 compact_log 命令无需外部 topic 文件即可独立运行
         "compact_model": cfg.get("compact_model", None),
+        "compact_base_url": cfg.get("compact_base_url", None),   # URL 保留，api_key 不存
         "compact_check_model": cfg.get("compact_check_model", None),
+        "compact_check_base_url": cfg.get("compact_check_base_url", None),
         "compact_max_tokens": cfg.get("compact_max_tokens", None),
         "embedding_model": cfg.get("embedding_model", None),
+        "compact_threshold": cfg.get("compact_threshold", None),
+        "compact_message": cfg.get("compact_message", None),
         # 注意：middle_task_optional 在 v2 中废弃，不写入
     }
