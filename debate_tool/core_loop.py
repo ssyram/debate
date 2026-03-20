@@ -218,7 +218,7 @@ async def do_compact(log, cfg):
     for attempt in range(8):
         cutoff_seq = None
         if attempt > 0:
-            threshold = cfg.get("compact_threshold", DEFAULT_COMPACT_THRESHOLD)
+            threshold = cfg.get("compact_threshold") or DEFAULT_COMPACT_THRESHOLD
             # 用新 threshold 的一半作为安全上限（prompt overhead 约 2x）
             cutoff_seq = _find_compact_window_cutoff(log, threshold // 2)
             if cutoff_seq is None:
@@ -238,7 +238,7 @@ async def do_compact(log, cfg):
             )
             raise
         except TokenLimitError as e:
-            old = cfg.get("compact_threshold", DEFAULT_COMPACT_THRESHOLD)
+            old = cfg.get("compact_threshold") or DEFAULT_COMPACT_THRESHOLD
             new_threshold = max(2000, old // 2)
             cfg["compact_threshold"] = new_threshold
             # 持久化到 log（通过 config_override entry）
@@ -271,7 +271,7 @@ def check_early_stop(cfg, rnd, reply_texts):
 
 
 async def maybe_compact(cfg, log):
-    threshold = cfg.get("compact_threshold", DEFAULT_COMPACT_THRESHOLD)
+    threshold = cfg.get("compact_threshold") or DEFAULT_COMPACT_THRESHOLD
     dlog(f"[maybe_compact] threshold={threshold}")
     token_count = estimate_tokens(log.since(0))
     if token_count <= threshold:
