@@ -915,6 +915,13 @@ async def _do_compact(
     )
     if cutoff_seq is not None:
         delta_entries = [e for e in delta_entries if e["seq"] <= cutoff_seq]
+    keep_last = cfg.get("keep_last", 0)
+    kept_entries = []
+    if keep_last > 0:
+        if len(delta_entries) <= keep_last:
+            print("⚠️  无内容可压缩：所有增量条目均在 --keep-last 保留范围内，如需压缩请调整 --keep-last。")
+        kept_entries = delta_entries[-keep_last:]
+        delta_entries = delta_entries[:-keep_last]
     dlog("compact.phase_a.start", f"prev_seq={prev_compact_seq} delta={len(delta_entries)} cutoff={cutoff_seq}",
          prev_seq=prev_compact_seq, delta=len(delta_entries), cutoff_seq=cutoff_seq)
 
@@ -1093,6 +1100,9 @@ async def _do_compact(
     if proxy_sent_counts is not None:
         new_state["proxy_sent_counts"] = proxy_sent_counts
     log.add("Compact Checkpoint", "", "compact_checkpoint", extra={"state": new_state})
+
+    # for e in kept_entries:
+    #     log.add(e["name"], e.get("content", ""), e.get("tag", ""), extra={k: v for k, v in e.items() if k not in ("seq", "ts", "name", "content", "tag")})
 
     checkpoint_seq = next(
         e["seq"] for e in reversed(log.entries) if e.get("tag") == "compact_checkpoint"

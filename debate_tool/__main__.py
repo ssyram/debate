@@ -8,7 +8,8 @@
     run      运行辩论
     resume   续跑辩论（同一日志 append，支持意见注入）
     compact  手动压缩日志（生成 checkpoint）
-    modify   修改 topic 配置（辩手/裁判/立场）并记录变更
+    modify   仅应用 Resume Topic 配置变更（不辩论、不裁判）
+             等价于 resume --rounds 0 --no-judge，但 Resume Topic 文件为必填参数
     live     启动辩论 + Web 实时查看器
 
 示例:
@@ -17,11 +18,15 @@
     debate-tool resume my_topic_debate_log.json my_topic.md --rounds 2 --cross-exam
     debate-tool compact my_log.json --compress ALL
     debate-tool compact my_log.json --compress -2
-    debate-tool modify my_topic.md --set debater.A.model=gpt-5
-    debate-tool modify my_topic.md --add "C|kimi-k2.5|激进派风格" --reason "增加新辩手"
-    debate-tool modify my_topic.md --drop B --force
-    debate-tool modify my_topic.md --pivot "A|新的立场描述"
+    debate-tool modify log.json config.md            # 仅注入配置，不辩论不裁判
+    debate-tool modify log.json phase2.md --force    # 涉及 add/drop 辩手时加 --force
     debate-tool live my_topic.md
+
+提示：凡是需要 --rounds 0 --no-judge 的场景（仅注入配置、不辩论不裁判），
+      推荐使用 modify 命令，语义更清晰：
+        debate-tool modify log.json inject_config.md
+      等价于：
+        debate-tool resume log.json inject_config.md --rounds 0 --no-judge
 """
 
 import re
@@ -68,7 +73,7 @@ def _handle_resume(argv):
     parser.add_argument("resume_topic", type=Path, nargs="?", default=None,
                         help="Resume Topic 文件 (.md, 可选)")
     parser.add_argument("--rounds", "-r", type=int, default=1,
-                        help="追加轮数 (默认 1, 0=仅执行 judge)")
+                        help="追加轮数 (默认 1, 0=仅执行 judge)；若同时加 --no-judge 则什么都不做，此场景推荐改用 modify 命令")
     parser.add_argument("--message", "-m", default="", help="观察者消息")
     parser.add_argument("--guide", default="", help="辩手引导提示")
     parser.add_argument("--cross-exam", nargs="?", const="1", default=None,
@@ -127,29 +132,11 @@ def _handle_compact(argv):
     )
     parser.add_argument("log", type=Path, help="辩论日志文件 (*_debate_log.json)")
     parser.add_argument(
-        "--compress",
-        "-c",
-        type=str,
-        default="ALL",
-        help=(
-            "压缩范围（向后兼容参数，新版 LLM 压缩忽略此参数）: "
-            "ALL=全部压缩(默认), "
-            "N(正数)=从后往前压缩N条, "
-            "-N(负数)=保留最后N条其余全压"
-        ),
-    )
-    parser.add_argument(
-        "--token-budget",
+        "--keep-last",
         type=int,
-        default=60000,
-        help="checkpoint 的 token 预算（向后兼容参数，新版 LLM 压缩忽略此参数，默认 60000）",
-    )
-    parser.add_argument(
-        "--topic",
-        type=Path,
-        default=None,
-        metavar="TOPIC_FILE",
-        help="议题 Markdown 文件（含 compact_model 等配置）；不提供时自动在日志同目录查找",
+        default=0,
+        metavar="N",
+        help="保留末尾 N 条记录不压缩，0=全部压缩（默认）",
     )
     parser.add_argument(
         "--message",
@@ -171,14 +158,13 @@ def _handle_compact(argv):
         print(f"❌ 文件不存在: {log_path}", file=sys.stderr)
         sys.exit(1)
 
-    topic_path = args.topic.resolve() if args.topic else None
-
     from debate_tool.runner import compact_log
     from debate_tool.debug_log import init_debug_logging
     debug_target = args.debug if hasattr(args, 'debug') and args.debug is not None else None
     init_debug_logging(debug_target)
 
-    compact_log(log_path, keep_last=0, token_budget=args.token_budget, topic_path=topic_path, message=args.message)
+    compact_log(log_path, keep_last=args.keep_last, message=args.message)
+
 
 
 def _handle_live(argv):
@@ -256,6 +242,14 @@ def main():
         _handle_resume(remaining)
     elif command == "compact":
         _handle_compact(remaining)
+    elif command == "modify":
+        positional = [t for t in _normalize_argv(remaining) if not t.startswith("-")]
+        if len(positional) < 2:
+            print("❌ modify 命令需要提供 Resume Topic 文件（.md）作为第二个参数\n"
+                  "用法: debate-tool modify <log.json> <config.md> [--force] [--debug]",
+                  file=sys.stderr)
+            sys.exit(1)
+        _handle_resume(remaining + ["--rounds", "0", "--no-judge"])
     elif command == "live":
         _handle_live(remaining)
     else:

@@ -26,34 +26,17 @@ from debate_tool.topic_parser import parse_topic_file, _mask_key
 
 # ── Compact CLI ──────────────────────────────────────────────────────────────
 
-def compact_log(log_path: Path, *, keep_last: int = 0, token_budget: int = 60000, topic_path: "Path | None" = None, message: str = "") -> None:
+def compact_log(log_path: Path, *, keep_last: int = 0, message: str = "") -> None:
     dlog("flow.compact.cli", f"path={log_path}", path=str(log_path))
     log = load_log_or_die(log_path)
-    cfg = resolve_compact_cfg(log, log_path, topic_path)
+    cfg = build_cfg_from_log(log)
     if message:
-        cfg["compact_message"] = message  # CLI --message 优先级最高，覆盖 topic/log 内嵌值
+        cfg["compact_message"] = message  # CLI --message 优先级最高，覆盖 log 内嵌值
+    if keep_last > 0:
+        cfg["keep_last"] = keep_last
     before = estimate_tokens("\n\n".join(e["content"] for e in log.entries))
     state, seq = run_compact_sync(log, cfg)
     print_compact_result(state, before, seq, log)
-
-
-def resolve_compact_cfg(log, log_path, topic_path):
-    dlog("flow.compact.resolve_cfg", f"topic_path={topic_path}", topic_path=str(topic_path))
-    resolved = topic_path or auto_discover_topic(log_path)
-    if resolved:
-        print(f"  自动发现 topic 文件: {resolved}")
-        return parse_topic_file(resolved)
-    if log.initial_config:
-        print("  使用 v2 log 内嵌配置（无需外部 topic 文件）")
-        return build_cfg_from_log(log)
-    from debate_tool.core_loop import die
-    die("❌ 未找到对应的 topic 文件，请通过 --topic 参数指定。")
-
-
-def auto_discover_topic(log_path):
-    stem = log_path.stem.removesuffix("_debate_log")
-    candidate = log_path.parent / f"{stem}.md"
-    return candidate if candidate.exists() else None
 
 
 def build_cfg_from_log(log):
