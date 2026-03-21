@@ -1101,8 +1101,8 @@ async def _do_compact(
         new_state["proxy_sent_counts"] = proxy_sent_counts
     log.add("Compact Checkpoint", "", "compact_checkpoint", extra={"state": new_state})
 
-    # for e in kept_entries:
-    #     log.add(e["name"], e.get("content", ""), e.get("tag", ""), extra={k: v for k, v in e.items() if k not in ("seq", "ts", "name", "content", "tag")})
+    for e in kept_entries:
+        log.add(e["name"], e.get("content", ""), e.get("tag", ""), extra={k: v for k, v in e.items() if k not in ("seq", "ts", "name", "content", "tag")})
 
     checkpoint_seq = next(
         e["seq"] for e in reversed(log.entries) if e.get("tag") == "compact_checkpoint"

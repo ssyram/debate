@@ -37,14 +37,18 @@ python3 -m debate_tool resume topic_debate_log.json --rounds 0 --message '...'
 python3 -m debate_tool run topic.md --no-judge
 python3 -m debate_tool resume topic_debate_log.json --rounds 1 --no-judge
 
-# 只注入配置、什么都不做（用于向 log 写入新字段，如 compact_model）
-python3 -m debate_tool resume topic_debate_log.json inject_config.md --rounds 0 --no-judge
+# 仅注入配置、不辩论不裁判（推荐用 modify，语义更清晰）
+python3 -m debate_tool modify topic_debate_log.json inject_config.md
 # inject_config.md 格式：
 # ---
 # compact_model: gpt-5.4-nano
 # compact_check_model: gpt-5.4-nano
 # no_judge: true   # 也可以在 topic YAML 里直接配置
 # ---
+# 涉及 add/drop 辩手时加 --force：
+python3 -m debate_tool modify topic_debate_log.json phase2.md --force
+# 等价于（但 modify 语义更清晰，优先使用 modify）：
+# python3 -m debate_tool resume topic_debate_log.json inject_config.md --rounds 0 --no-judge
 
 # 压缩日志
 python3 -m debate_tool compact topic_debate_log.json
@@ -346,7 +350,7 @@ python3 -m debate_tool resume topic_debate_log.json --rounds 0 --message '
 | **深度被广度稀释** | 每追溯一层假设就旁出三个新话题，主线消失 | 加 `worth()` 守卫：只有局部假设已局部闭合才允许旁出 |
 | **补域爆炸** | 补域/广度无限扩展，没有停止 | 加截断条件：无外部经验命中则挂起（不展开） |
 | **topic2 错误** | 把工程细节讨论当成机制验证 | 先验证核心命题，再开细节 topic |
-| **术语结论** | summary 满是 S4.5、GapSpec，用户读不懂 | 白话续跑（`--rounds 1` 白话重述 + `--rounds 0` 单独触发裁判） |
+| **术语结论** | summary 满是 S4.5、GapSpec，用户读不懂 | 白话续跑（`--rounds 1 --no-judge` 白话重述 + `--rounds 0` 单独触发裁判；或用 `modify` 仅注入白话任务配置） |
 | **裁判过于严苛** | 裁判字数限制太死，输出残缺 | 裁判 judge_instructions 写"可以多写" |
 
 ---
