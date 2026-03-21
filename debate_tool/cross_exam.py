@@ -84,6 +84,7 @@ async def run_cross_exam(
             timeout=timeout,
             base_url=q_base_url,
             api_key=q_api_key,
+            purpose="cross_exam.select",
         )
         selected_target = _extract_cross_exam_selected_target(
             selected_raw,
@@ -109,6 +110,7 @@ async def run_cross_exam(
                 timeout=timeout,
                 base_url=q_base_url,
                 api_key=q_api_key,
+                purpose="cross_exam.select.retry",
             )
             selected_target = _extract_cross_exam_selected_target(
                 selected_retry_raw,
@@ -163,6 +165,7 @@ async def run_cross_exam(
             timeout=timeout,
             base_url=q_base_url,
             api_key=q_api_key,
+            purpose="cross_exam.question",
         )
         payload = _extract_valid_cross_exam_payload(
             raw_result,
@@ -190,6 +193,7 @@ async def run_cross_exam(
                 timeout=timeout,
                 base_url=q_base_url,
                 api_key=q_api_key,
+                purpose="cross_exam.question.repair",
             )
             repaired_payload = _extract_valid_cross_exam_payload(
                 repaired,
@@ -224,6 +228,7 @@ async def run_cross_exam(
                 timeout=timeout,
                 base_url=q_base_url,
                 api_key=q_api_key,
+                purpose="cross_exam.question.form",
             )
             form_payload = _extract_cross_exam_form_payload(form_raw, selected_target=selected_target)
             if form_payload is not None:
@@ -247,8 +252,9 @@ async def run_cross_exam(
                 timeout=timeout,
                 base_url=q_base_url,
                 api_key=q_api_key,
+                purpose="cross_exam.fallback.select",
             )
-            dlog(f"[cross-exam raw fallback target] {fb_select_resp!r}")
+            dlog("cross_exam.fallback.target", f"{fb_select_resp!r}", response=fb_select_resp)
             fb_digit = next((c for c in fb_select_resp if c.isdigit()), None)
             fb_idx = int(fb_digit) - 1 if fb_digit is not None else -1
             if fb_idx < 0 or fb_idx >= len(fb_opponents):
@@ -279,8 +285,9 @@ async def run_cross_exam(
                 timeout=timeout,
                 base_url=q_base_url,
                 api_key=q_api_key,
+                purpose="cross_exam.fallback.reason",
             )
-            dlog(f"[cross-exam raw fallback reason] {fb_reason_resp!r}")
+            dlog("cross_exam.fallback.reason", f"{fb_reason_resp!r}", response=fb_reason_resp)
             fb_reason = fb_reason_resp.strip() or "质疑其论点的合理性"
 
             # Step 4: question 问答
@@ -298,8 +305,9 @@ async def run_cross_exam(
                 timeout=timeout,
                 base_url=q_base_url,
                 api_key=q_api_key,
+                purpose="cross_exam.fallback.question",
             )
-            dlog(f"[cross-exam raw fallback question] {fb_question_resp!r}")
+            dlog("cross_exam.fallback.question", f"{fb_question_resp!r}", response=fb_question_resp)
             fb_question = fb_question_resp.strip() or "请进一步解释你的立场。"
 
             # Step 5: 组装 payload

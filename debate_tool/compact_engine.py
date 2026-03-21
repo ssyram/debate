@@ -249,8 +249,9 @@ async def _fill_fields(
                     debater["model"], "",
                     prompt,
                     base_url=base_url, api_key=api_key, max_reply_tokens=800,
+                    purpose=f"compact.fillForm.open.{field_name}",
                 )
-                dlog(f"[fillForm open {field_name}] {resp!r}")
+                dlog("compact.fillForm.open", f"{field_name}={resp!r}", field=field_name)
                 val = resp.strip()
                 if not val:
                     raise ValueError(f"「{field_name}」回答为空")
@@ -287,8 +288,9 @@ async def _fill_fields(
                     debater["model"], "",
                     prompt,
                     base_url=base_url, api_key=api_key, max_reply_tokens=50,
+                    purpose=f"compact.fillForm.choice.{field_name}",
                 )
-                dlog(f"[fillForm choice {field_name}] {resp!r}")
+                dlog("compact.fillForm.choice", f"{field_name}={resp!r}", field=field_name)
                 text = resp.strip()
                 # 宽松匹配：只要响应中包含某个选项即认为有效
                 matched = next((o for o in _opts if o in text), None)
@@ -320,8 +322,9 @@ async def _fill_fields(
                     debater["model"], "",
                     bulk_prompt,
                     base_url=base_url, api_key=api_key, max_reply_tokens=1200,
+                    purpose=f"compact.fillForm.askBulk.{field_name}",
                 )
-                dlog(f"[fillForm askBulk {field_name}] {bulk_resp!r}")
+                dlog("compact.fillForm.askBulk", f"{field_name}={bulk_resp!r}", field=field_name)
                 bulk_text = bulk_resp.strip()
 
                 # 判断是否"没有"
@@ -355,7 +358,7 @@ async def _fill_fields(
                         bulk_ok = True
                     # 若 raw_lines 为空但没有"没有"关键词：bulk 失败，走 askIterative
             except Exception as bulk_exc:
-                dlog(f"[fillForm askBulk {field_name} failed] {bulk_exc}")
+                dlog("compact.fillForm.askBulk.fail", f"{field_name}: {bulk_exc}", field=field_name, error=str(bulk_exc))
                 bulk_ok = False
 
             # ── askIterative（bulk 失败时）────────────────────────────
@@ -372,8 +375,9 @@ async def _fill_fields(
                     debater["model"], "",
                     first_prompt,
                     base_url=base_url, api_key=api_key, max_reply_tokens=600,
+                    purpose=f"compact.fillForm.askIterative.{field_name}",
                 )
-                dlog(f"[fillForm askIterative {field_name} first] {first_resp!r}")
+                dlog("compact.fillForm.askIterative.first", f"{field_name}={first_resp!r}", field=field_name)
                 first_text = first_resp.strip()
 
                 _no_kw = ("没有", "无", "暂无", "none", "no item", "nothing")
@@ -412,8 +416,9 @@ async def _fill_fields(
                             debater["model"], "",
                             next_prompt,
                             base_url=base_url, api_key=api_key, max_reply_tokens=600,
+                            purpose=f"compact.fillForm.askIterative.{field_name}",
                         )
-                        dlog(f"[fillForm askIterative {field_name} next idx={idx}] {next_resp!r}")
+                        dlog("compact.fillForm.askIterative.next", f"{field_name} idx={idx} resp={next_resp!r}", field=field_name, idx=idx)
                         next_text = next_resp.strip()
                         if any(kw in next_text.lower() for kw in _no_kw):
                             break
@@ -437,7 +442,7 @@ async def _fill_fields(
 
         else:
             # 未知 spec 类型，跳过
-            dlog(f"[fillForm] 未知 spec type={field_type!r} for field {field_name!r}，跳过")
+            dlog("compact.fillForm.unknown_spec", f"type={field_type!r} field={field_name!r}", field=field_name, spec_type=field_type)
 
     return filled
 
@@ -599,8 +604,9 @@ async def _compact_single_debater(
                 base_url=debater_base_url,
                 api_key=debater_api_key,
                 max_reply_tokens=3000,
+                purpose="compact.phase_b",
             )
-            dlog(f"[compact raw phase_b_raw] {raw!r}")
+            dlog("compact.phase_b.raw", f"{name}: {raw!r}", debater=name)
             result = json.loads(_strip_json_fence(raw))
             if not validate_participant_state(result):
                 failure_feedback = f"输出 JSON 缺少必要字段，实际字段为：{list(result.keys())}"
@@ -617,8 +623,9 @@ async def _compact_single_debater(
                 base_url=check_url,
                 api_key=check_key,
                 max_reply_tokens=10,
+                purpose="compact.phase_b.validity_check",
             )
-            dlog(f"[compact raw check_resp] {check_resp!r}")
+            dlog("compact.phase_b.check", f"{name}: {check_resp!r}", debater=name)
             if not check_resp.strip().lower().startswith("y"):
                 failure_feedback = f"立场合理性校验不通过（校验器回答：{check_resp.strip()[:100]}）。请确保立场描述内部自洽、符合辩论情境。"
                 raise ValueError(f"合理性校验不通过: {check_resp.strip()[:100]}")
@@ -692,8 +699,9 @@ async def _compact_single_debater(
                                 check_model, drift_sys, drift_usr,
                                 base_url=check_url, api_key=check_key,
                                 max_reply_tokens=150,
+                                purpose="compact.phase_b.drift_check",
                             )
-                            dlog(f"[compact raw drift_resp] {drift_resp!r}")
+                            dlog("compact.phase_b.drift", f"{name}: {drift_resp!r}", debater=name)
                             first_line = (
                                 drift_resp.strip().splitlines() or [""]
                             )[0].strip().upper()
@@ -722,8 +730,9 @@ async def _compact_single_debater(
                                     base_url=debater_base_url,
                                     api_key=debater_api_key,
                                     max_reply_tokens=3000,
+                                    purpose="compact.phase_b.correction",
                                 )
-                                dlog(f"[compact raw corr_raw] {corr_raw!r}")
+                                dlog("compact.phase_b.correction", f"{name}: {corr_raw!r}", debater=name)
                                 try:
                                     corr_parsed = json.loads(_strip_json_fence(corr_raw))
                                     if validate_participant_state(corr_parsed):
@@ -816,14 +825,14 @@ async def _compact_single_debater(
                     vecs = [item["embedding"] for item in emb_resp.json().get("data", [])]
                 if len(vecs) >= 2:
                     cos_val_fb = _cos(vecs[0], vecs[1])
-                    dlog(f"[compact fallback cos] {name} attempt={_fb_attempt} cos={cos_val_fb:.3f}")
+                    dlog("compact.fallback.cos", f"{name} attempt={_fb_attempt} cos={cos_val_fb:.3f}", debater=name, attempt=_fb_attempt, cos=cos_val_fb)
                     if cos_val_fb >= 0.4:
                         return fallback_result  # cosPass
                     # cos < 0.4，继续进行 LLM 语义检查
                 else:
                     skip_cos = True  # embedding 返回不足，跳过 cos，直接 LLM 检查
             except Exception as e:
-                dlog(f"[compact fallback cos error] {e}")
+                dlog("compact.fallback.cos.error", f"{name}: {e}", debater=name, error=str(e))
                 skip_cos = True  # embedding 失败，跳过 cos，直接 LLM 检查
 
         # LLM 语义检查（无 embedding 或 cos < 0.4 时均进入）
@@ -838,8 +847,9 @@ async def _compact_single_debater(
                 check_model, drift_sys, drift_usr,
                 base_url=check_url, api_key=check_key,
                 max_reply_tokens=150,
+                purpose="compact.fallback.semantic_check",
             )
-            dlog(f"[compact fallback semantic check] {semantic_resp!r}")
+            dlog("compact.fallback.semantic", f"{name}: {semantic_resp!r}", debater=name)
             first_line = (semantic_resp.strip().splitlines() or [""])[0].strip().upper()
             print(
                 f"  🔍 {name} fallback semantic check attempt={_fb_attempt} "
@@ -855,7 +865,7 @@ async def _compact_single_debater(
             )
             continue
         except Exception as sem_e:
-            dlog(f"[compact fallback semantic check error] {sem_e}")
+            dlog("compact.fallback.semantic.error", f"{name}: {sem_e}", debater=name, error=str(sem_e))
             # LLM 语义检查异常，fallback 回上次立场
             if prev_participant:
                 fb = dict(prev_participant)
@@ -905,7 +915,8 @@ async def _do_compact(
     )
     if cutoff_seq is not None:
         delta_entries = [e for e in delta_entries if e["seq"] <= cutoff_seq]
-    dlog(f"[compact] Phase A 开始  prev_compact_seq={prev_compact_seq}  delta={len(delta_entries)} 条  cutoff_seq={cutoff_seq}")
+    dlog("compact.phase_a.start", f"prev_seq={prev_compact_seq} delta={len(delta_entries)} cutoff={cutoff_seq}",
+         prev_seq=prev_compact_seq, delta=len(delta_entries), cutoff_seq=cutoff_seq)
 
     # 若无增量，返回已有 checkpoint 的 public_view
     if not delta_entries:
@@ -936,19 +947,21 @@ async def _do_compact(
                     f"{phase_a_feedback}\n"
                     f"请重新输出符合要求的 JSON。"
                 )
-            dlog(f"[compact] Phase A LLM call  model={model}  url={base_url}")
+            dlog("compact.phase_a.llm_call", f"model={model} url={base_url}", model=model)
             raw = await call_llm(
                 model, sys_p, usr_p,
                 base_url=base_url, api_key=api_key, max_reply_tokens=4000,
+                purpose="compact.phase_a",
             )
-            dlog(f"[compact raw phase_a_raw] {raw!r}")
+            dlog("compact.phase_a.raw", f"{raw!r}")
             parsed = json.loads(_strip_json_fence(raw))
             is_valid, errors = validate_public_info(parsed, prev_state)
             if not is_valid:
                 phase_a_feedback = f"输出 JSON 单调性校验失败：{errors}，请修正后重新输出。"
                 raise ValueError(f"Phase A 单调性校验失败: {errors}")
             phase_a_result = parsed
-            dlog(f"[compact] Phase A 成功  axioms={len(parsed.get('axioms',[]))}  disputes={len(parsed.get('disputes',[]))}  pruned={len(parsed.get('pruned_paths',[]))}")
+            dlog("compact.phase_a.ok", f"axioms={len(parsed.get('axioms',[]))} disputes={len(parsed.get('disputes',[]))} pruned={len(parsed.get('pruned_paths',[]))}",
+                 axioms=len(parsed.get('axioms',[])), disputes=len(parsed.get('disputes',[])), pruned=len(parsed.get('pruned_paths',[])))
             break
         except TokenLimitError:
             raise  # compact 窗口本身超限，交给调用方缩小窗口
@@ -967,7 +980,7 @@ async def _do_compact(
                         f"输出格式有误（{exc}），请确保输出合法 JSON，"
                         f"字段包含：topic, axioms, disputes, pruned_paths"
                     )
-            dlog(f"[compact] Phase A attempt {attempt+1} 失败: {exc}")
+            dlog("compact.phase_a.fail", f"attempt={attempt+1}: {exc}", attempt=attempt+1, error=str(exc))
             if attempt < 2:
                 print(
                     f"  ⚠️ Phase A attempt {attempt + 1} 失败: {exc}",
@@ -981,7 +994,7 @@ async def _do_compact(
 
     if phase_a_result is None:
         # Phase A 降级：逐字段独立调用 LLM
-        dlog("[compact] Phase A 降级为逐字段模式")
+        dlog("compact.phase_a.fallback", "降级为逐字段模式")
         _fallback_topic = (
             prev_state.get("topic") if prev_state
             else {"current_formulation": "（无法提取）", "notes": None}
@@ -1008,8 +1021,9 @@ async def _do_compact(
                         "你是辩论状态提取器。只输出要求的 JSON 字段，不附加任何文字。",
                         usr,
                         base_url=base_url, api_key=api_key, max_reply_tokens=1000,
+                        purpose=f"compact.phase_a.fetch_{field_name}",
                     )
-                    dlog(f"[compact raw _fetch_field({field_name!r})] {r!r}")
+                    dlog("compact.phase_a.fetch_field", f"{field_name!r}: {r!r}", field=field_name)
                     return json.loads(_strip_json_fence(r))
                 except Exception as e:
                     exc_str = str(e)
@@ -1056,7 +1070,7 @@ async def _do_compact(
 
     # ── Phase B: 辩手立场自更新（并行） ──────────────────────────
     debaters = cfg.get("debaters", [])
-    dlog(f"[compact] Phase B 开始  辩手数={len(debaters)}")
+    dlog("compact.phase_b.start", f"debaters={len(debaters)}", count=len(debaters))
     participant_states = await asyncio.gather(
         *[
             _compact_single_debater(d, delta_entries, prev_state, cfg, compact_message=compact_message)

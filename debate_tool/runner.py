@@ -27,7 +27,7 @@ from debate_tool.topic_parser import parse_topic_file, _mask_key
 # ── Compact CLI ──────────────────────────────────────────────────────────────
 
 def compact_log(log_path: Path, *, keep_last: int = 0, token_budget: int = 60000, topic_path: "Path | None" = None, message: str = "") -> None:
-    dlog(f"[compact_log] {log_path}")
+    dlog("flow.compact.cli", f"path={log_path}", path=str(log_path))
     log = load_log_or_die(log_path)
     cfg = resolve_compact_cfg(log, log_path, topic_path)
     if message:
@@ -38,7 +38,7 @@ def compact_log(log_path: Path, *, keep_last: int = 0, token_budget: int = 60000
 
 
 def resolve_compact_cfg(log, log_path, topic_path):
-    dlog(f"[resolve_compact_cfg] topic_path={topic_path}")
+    dlog("flow.compact.resolve_cfg", f"topic_path={topic_path}", topic_path=str(topic_path))
     resolved = topic_path or auto_discover_topic(log_path)
     if resolved:
         print(f"  自动发现 topic 文件: {resolved}")
@@ -63,7 +63,7 @@ def build_cfg_from_log(log):
 
 
 def run_compact_sync(log, cfg):
-    dlog(f"[run_compact_sync] entries={len(log.entries)}")
+    dlog("flow.compact.run_sync", f"entries={len(log.entries)}", entries=len(log.entries))
     system_text = f"## 辩论议题\n\n{cfg['topic_body']}"
     compact_message = cfg.get("compact_message", "") or ""
     try:
@@ -108,7 +108,9 @@ def build_flag_list(cfg):
     flags = []
     cross_exam = cfg.get("cross_exam", 0)
     if cross_exam:
-        if cross_exam < 0:
+        if isinstance(cross_exam, list):
+            flags.append(f"质询(R{','.join(str(r) for r in cross_exam)})")
+        elif cross_exam < 0:
             flags.append("质询(全轮)")
         elif cross_exam == 1:
             flags.append("质询(R1)")
@@ -139,11 +141,13 @@ def dry_run(cfg, topic_path, cli_cot):
     print("=" * 60)
     print(f"\n  文件:     {topic_path}")
     print(f"  轮数:     {cfg['rounds']}")
-    if cx < 0:
+    if isinstance(cx, list):
+        print(f"  质询:     R{','.join(str(r) for r in cx)} 后")
+    elif cx and cx < 0:
         print(f"  质询:     每轮")
     elif cx == 1:
         print(f"  质询:     R1 后")
-    elif cx > 1:
+    elif cx and cx > 1:
         print(f"  质询:     R1~R{cx} 后")
     else:
         print(f"  质询:     否")
@@ -214,7 +218,8 @@ def init_debug_if_needed(args):
 
 def apply_cli_overrides(cfg, args):
     if args.cross_exam is not None:
-        cfg["cross_exam"] = args.cross_exam
+        from debate_tool.core_loop import parse_cross_exam
+        cfg["cross_exam"] = parse_cross_exam(args.cross_exam)
     if args.early_stop is not None:
         cfg["early_stop"] = args.early_stop
     if args.rounds is not None:
@@ -252,11 +257,13 @@ def parse_run_args(argv):
             "  debate-tool run my_topic.md --cross-exam\n"
             "  debate-tool run my_topic.md --cross-exam 3\n"
             "  debate-tool run my_topic.md --cross-exam -1\n"
+            "  debate-tool run my_topic.md --cross-exam ALL\n"
+            "  debate-tool run my_topic.md --cross-exam '[1,3,5]'\n"
             "  debate-tool run my_topic.md --cross-exam --early-stop\n"
             "\n"
             "质询:\n"
-            "  --cross-exam [N]  每轮后增加质询子回合 (默认 N=1, 仅 R1 后)\n"
-            "                    N=2 → R1, R2 后均质询; N=-1 → 每轮都质询\n"
+            "  --cross-exam [SPEC]  每轮后增加质询子回合\n"
+            "                       N=前N轮, -1/ALL/*=全轮, [1,3,5]=指定轮次\n"
             "\n"
             "早停:\n"
             "  --early-stop      启用收敛早停 (观点趋同时跳过剩余轮次)\n"
@@ -272,7 +279,8 @@ def parse_run_args(argv):
     ap.add_argument("topic", type=Path, help="议题 Markdown 文件（含 YAML front-matter）")
     ap.add_argument("--rounds", type=int, default=None, help="覆盖辩论轮数")
     ap.add_argument("--dry-run", action="store_true", help="仅解析配置，不调用 LLM")
-    ap.add_argument("--cross-exam", nargs="?", type=int, const=1, default=None, metavar="N", help="质询轮数")
+    ap.add_argument("--cross-exam", nargs="?", const="1", default=None, metavar="SPEC",
+                    help="质询: N=前N轮, -1/ALL/*=全轮, [1,3,5]=指定轮次, false/0=不质询")
     ap.add_argument("--early-stop", nargs="?", type=float, const=DEFAULT_EARLY_STOP_THRESHOLD, default=None, metavar="T", help="启用收敛早停")
     ap.add_argument("--cot", "--think", dest="cot_length", nargs="?", type=int, const=0, default=None, metavar="LENGTH", help="为辩手启用思考空间 (CoT)")
     ap.add_argument("--output", type=Path, default=None, metavar="LOG_FILE", help="指定输出日志文件路径")

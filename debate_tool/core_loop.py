@@ -55,9 +55,61 @@ def judge_api(judge, cfg):
     return resolve_api(judge, base)
 
 
+def parse_cross_exam(raw) -> "int | list[int]":
+    """Normalize cross_exam value from CLI / YAML / resume-topic.
+
+    Accepted forms:
+        None / 0 / false / False / "false" / "0"  →  0   (no cross-exam)
+        True / true / 1 / "1"                      →  1   (first round only)
+        N (positive int)                            →  N   (first N rounds)
+        -1 / "ALL" / "all" / "*"                   →  -1  (every round)
+        "[1,3,5]" / [1,3,5]                        →  [1,3,5]  (explicit rounds)
+        -N (N>1)                                   →  raises ValueError
+    """
+    if raw is None:
+        return 0
+    if isinstance(raw, bool):
+        return 1 if raw else 0
+    if isinstance(raw, list):
+        return [int(x) for x in raw]
+    if isinstance(raw, int):
+        if raw < -1:
+            raise ValueError(f"cross_exam={raw} 无效：负数仅允许 -1 表示全跑")
+        return raw
+    s = str(raw).strip()
+    if not s or s.lower() in ("false", "0", "none"):
+        return 0
+    if s.lower() in ("true", ):
+        return 1
+    if s.lower() in ("all", "*"):
+        return -1
+    if s.startswith("["):
+        import json as _json
+        try:
+            arr = _json.loads(s)
+        except _json.JSONDecodeError:
+            raise ValueError(f"cross_exam={s!r} 无法解析为 JSON 数组")
+        if not isinstance(arr, list):
+            raise ValueError(f"cross_exam={s!r} 解析结果不是数组")
+        return [int(x) for x in arr]
+    n = int(s)
+    if n < -1:
+        raise ValueError(f"cross_exam={n} 无效：负数仅允许 -1 表示全跑")
+    return n
+
+
 def compute_xexam_rounds(cross_exam, rounds, base_rnd=0):
-    """计算需要做 cross exam 的轮次集合（绝对轮次编号）"""
-    if cross_exam is None or cross_exam == 0:
+    """计算需要做 cross exam 的轮次集合（绝对轮次编号）
+
+    cross_exam:
+        0         → 不质询
+        N (>0)    → base_rnd 后的前 N 轮（不含最后一轮）
+        -1        → 每轮都质询（不含最后一轮）
+        [1,3,5]   → 这些相对轮次（1-based，相对于 base_rnd）才质询
+    """
+    if isinstance(cross_exam, list):
+        return {base_rnd + r for r in cross_exam if base_rnd + r < base_rnd + rounds}
+    if not cross_exam:
         return set()
     if cross_exam < 0:
         return set(range(base_rnd + 1, base_rnd + rounds))
@@ -211,7 +263,7 @@ def _find_compact_window_cutoff(log, target_tokens: int) -> "int | None":
 
 
 async def do_compact(log, cfg):
-    dlog(f"[do_compact] entries={len(log.entries)}")
+    dlog("flow.compact.run", f"entries={len(log.entries)}", entries=len(log.entries))
     system_text = f"## 辩论议题\n\n{cfg.get('topic_body', log.topic)}"
     compact_message = cfg.get("compact_message", "") or ""
 
@@ -260,7 +312,7 @@ async def do_compact(log, cfg):
 # ── Predicates ───────────────────────────────────────────────────────────────
 
 def check_early_stop(cfg, rnd, reply_texts):
-    dlog(f"[check_early_stop] rnd={rnd} early_stop={cfg.get('early_stop')}")
+    dlog("flow.early_stop.check", f"rnd={rnd}", rnd=rnd, early_stop=cfg.get('early_stop'))
     if not cfg.get("early_stop") or rnd >= cfg["rounds"]:
         return
     converged, avg = check_convergence(reply_texts, cfg["early_stop"])
@@ -272,7 +324,7 @@ def check_early_stop(cfg, rnd, reply_texts):
 
 async def maybe_compact(cfg, log):
     threshold = cfg.get("compact_threshold") or DEFAULT_COMPACT_THRESHOLD
-    dlog(f"[maybe_compact] threshold={threshold}")
+    dlog("flow.compact.check", f"threshold={threshold}", threshold=threshold)
     token_count = estimate_tokens(log.since(0))
     if token_count <= threshold:
         return
@@ -285,7 +337,7 @@ def should_cross_exam(rnd, xrounds, total_rounds):
 
 
 async def retry_on_token_limit(make_tasks, on_fail, max_attempts=10):
-    dlog(f"[retry_on_token_limit] max_attempts={max_attempts}")
+    dlog("flow.retry", f"max_attempts={max_attempts}", max_attempts=max_attempts)
     for attempt in range(max_attempts):
         try:
             return await asyncio.gather(*make_tasks())
@@ -297,7 +349,7 @@ async def retry_on_token_limit(make_tasks, on_fail, max_attempts=10):
 # ── Core: debater round ───────────────────────────────────────────────────────
 
 async def one_debater(d, cfg, log, rnd, challenged, cot_len, api):
-    dlog(f"[one_debater] {d['name']} rnd={rnd}")
+    dlog("flow.one_debater", f"{d['name']} rnd={rnd}", name=d['name'], rnd=rnd)
     task = apply_challenge(task_for_round(cfg, rnd), d["name"], challenged, rnd, cfg)
     sp = inject_stance(build_debater_sys(d, rnd, task, cfg["constraints"]), log, d)
     ctx = effective_context(log, cfg["topic_body"], rnd)
@@ -317,7 +369,7 @@ async def compact_on_token_limit(log, cfg, e, attempt):
 
 
 async def debater_round(cfg, log, rnd, challenged, cot_len):
-    dlog(f"[debater_round] rnd={rnd} debaters={[d['name'] for d in cfg['debaters']]}")
+    dlog("flow.debater_round", f"rnd={rnd}", rnd=rnd, debaters=[d['name'] for d in cfg['debaters']])
     api = resolve_api(cfg)
     make = lambda: [one_debater(d, cfg, log, rnd, challenged, cot_len, api) for d in cfg["debaters"]]
     return await retry_on_token_limit(make, lambda e, a: compact_on_token_limit(log, cfg, e, a))
@@ -326,7 +378,7 @@ async def debater_round(cfg, log, rnd, challenged, cot_len):
 # ── Core: cross exam ──────────────────────────────────────────────────────────
 
 async def maybe_cross_exam(cfg, log, rnd, xrounds):
-    dlog(f"[maybe_cross_exam] rnd={rnd} should={should_cross_exam(rnd, xrounds, cfg['rounds'])}")
+    dlog("flow.cross_exam.check", f"rnd={rnd}", rnd=rnd, should=should_cross_exam(rnd, xrounds, cfg['rounds']))
     if not should_cross_exam(rnd, xrounds, cfg["rounds"]):
         return None
     print(f"\n\n🔍 质询环节 (R{rnd}.5)\n")
@@ -355,7 +407,7 @@ async def one_round(cfg, log, rnd, challenged, cot_len, xrounds):
 # ── Core: judge ───────────────────────────────────────────────────────────────
 
 async def _judge_with_retry(judge, sp, log, cfg, url, key, max_attempts=5):
-    dlog(f"[_judge_with_retry] max_attempts={max_attempts}")
+    dlog("flow.judge", f"max_attempts={max_attempts}", max_attempts=max_attempts)
     ctx = [log.compact()]
     for attempt in range(max_attempts):
         try:
@@ -367,6 +419,7 @@ async def _judge_with_retry(judge, sp, log, cfg, url, key, max_attempts=5):
                 timeout=cfg.get("timeout", 300),
                 base_url=url,
                 api_key=key,
+                purpose="judge",
             )
         except TokenLimitError as e:
             print(f"\n  📦 裁判 token 超限 (max={e.model_max_tokens})，compact 后重试...", file=sys.stderr)
@@ -386,7 +439,7 @@ async def judge_phase(cfg, log):
 # ── Core: main loop ───────────────────────────────────────────────────────────
 
 async def core_loop(cfg, log, base_rnd, cot_len, xrounds):
-    dlog(f"[core_loop] base={base_rnd} rounds={cfg['rounds']} cot={cot_len} xrounds={xrounds}")
+    dlog("flow.core_loop", f"base={base_rnd} rounds={cfg['rounds']}", base_rnd=base_rnd, rounds=cfg['rounds'], cot=cot_len, xrounds=str(xrounds))
     challenged = None
     try:
         for rnd in range(base_rnd + 1, cfg["rounds"] + 1):

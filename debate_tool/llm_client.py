@@ -132,6 +132,7 @@ async def call_llm(
     timeout: int = 300,
     base_url: str = "",
     api_key: str = "",
+    purpose: str = "",
 ) -> str:
     """调用 LLM API，支持按角色覆盖 base_url/api_key。"""
     url = base_url or ENV_BASE_URL
@@ -149,11 +150,11 @@ async def call_llm(
         "temperature": temperature,
         "max_tokens": max_reply_tokens,
     }
-    dlog(
-        f"LLM 请求  model={model}  url={url}  max_tokens={max_reply_tokens}\n"
-        f"  [system] {system}\n"
-        f"  [user]   {user_content}"
-    )
+    dlog("llm.request", f"model={model} purpose={purpose}",
+         model=model, purpose=purpose, url=url,
+         max_tokens=max_reply_tokens,
+         system=_preview_debug_text(system, 800),
+         user=_preview_debug_text(user_content, 800))
     async with httpx.AsyncClient(timeout=timeout) as c:
         for attempt in range(3):
             try:
@@ -171,10 +172,9 @@ async def call_llm(
                     json=request_payload,
                 )
                 body_text = r.text
-                dlog(
-                    f"LLM 原始响应  model={model}  status={r.status_code}\n"
-                    f"  {body_text}"
-                )
+                dlog("llm.response.raw", f"model={model} status={r.status_code}",
+                     model=model, purpose=purpose, status=r.status_code,
+                     body=_preview_debug_text(body_text, 2000))
                 if _is_token_limit_error(r.status_code, body_text):
                     limit = _parse_token_limit(body_text) or 0
                     raise TokenLimitError(model, limit, body_text)
@@ -182,19 +182,19 @@ async def call_llm(
                 data = r.json()
                 content, finish_reason = _extract_response_text(data)
                 if finish_reason == "length" and attempt < 2:
-                    dlog(
-                        f"LLM 截断响应  model={model}  attempt={attempt}  retry_with_max_tokens={min(max(max_reply_tokens * (2 ** (attempt + 1)), 600), 16000)}"
-                    )
+                    dlog("llm.response.truncated", f"model={model} attempt={attempt}",
+                         model=model, purpose=purpose, attempt=attempt,
+                         retry_max_tokens=min(max(max_reply_tokens * (2 ** (attempt + 1)), 600), 16000))
                     continue
-                dlog(
-                    f"LLM 响应  model={model}  finish={finish_reason}\n"
-                    f"  {content[:300]}{'...' if len(content) > 300 else ''}"
-                )
+                dlog("llm.response", f"model={model} finish={finish_reason}",
+                     model=model, purpose=purpose, finish_reason=finish_reason,
+                     content=_preview_debug_text(content, 300))
                 return content
             except TokenLimitError:
                 raise
             except Exception as e:
-                dlog(f"LLM 错误  model={model}  attempt={attempt}  err={e}")
+                dlog("llm.error", f"model={model} attempt={attempt} err={e}",
+                     model=model, purpose=purpose, attempt=attempt, error=str(e))
                 if attempt == 2:
                     return f"[调用失败: {e}]"
                 print(f"  ⚠️ {model} retry {attempt + 1}: {e}", file=sys.stderr)
@@ -280,5 +280,6 @@ async def _split_cot_or_regenerate_reply(
         timeout=timeout,
         base_url=base_url,
         api_key=api_key,
+        purpose="cot.recovery",
     )
     return cleaned, reply

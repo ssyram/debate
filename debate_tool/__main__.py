@@ -1,29 +1,30 @@
-"""debate-tool \u2014 \u591a\u6a21\u578b\u8fa9\u8bba\u6846\u67b6
+"""debate-tool — 多模型辩论框架
 
-\u7528\u6cd5:
+用法:
     python -m debate_tool <command> [options]
     debate-tool <command> [options]
 
-\u547d\u4ee4:
-    run      \u8fd0\u884c\u8fa9\u8bba
-    resume   \u7eed\u8dd1\u8fa9\u8bba\uff08\u540c\u4e00\u65e5\u5fd7 append\uff0c\u652f\u6301\u610f\u89c1\u6ce8\u5165\uff09
-    compact  \u624b\u52a8\u538b\u7f29\u65e5\u5fd7\uff08\u751f\u6210 checkpoint\uff09
-    modify   \u4fee\u6539 topic \u914d\u7f6e\uff08\u8fa9\u624b/\u88c1\u5224/\u7acb\u573a\uff09\u5e76\u8bb0\u5f55\u53d8\u66f4
-    live     \u542f\u52a8\u8fa9\u8bba + Web \u5b9e\u65f6\u67e5\u770b\u5668
+命令:
+    run      运行辩论
+    resume   续跑辩论（同一日志 append，支持意见注入）
+    compact  手动压缩日志（生成 checkpoint）
+    modify   修改 topic 配置（辩手/裁判/立场）并记录变更
+    live     启动辩论 + Web 实时查看器
 
-\u793a\u4f8b:
+示例:
     debate-tool run my_topic.md
-    debate-tool resume my_topic_debate_log.json my_topic.md --message "\u8bf7\u91cd\u70b9\u8ba8\u8bba\u5b89\u5168\u6027"
+    debate-tool resume my_topic_debate_log.json my_topic.md --message "请重点讨论安全性"
     debate-tool resume my_topic_debate_log.json my_topic.md --rounds 2 --cross-exam
     debate-tool compact my_log.json --compress ALL
     debate-tool compact my_log.json --compress -2
     debate-tool modify my_topic.md --set debater.A.model=gpt-5
-    debate-tool modify my_topic.md --add "C|kimi-k2.5|\u6fc0\u8fdb\u6d3e\u98ce\u683c" --reason "\u589e\u52a0\u65b0\u8fa9\u624b"
+    debate-tool modify my_topic.md --add "C|kimi-k2.5|激进派风格" --reason "增加新辩手"
     debate-tool modify my_topic.md --drop B --force
-    debate-tool modify my_topic.md --pivot "A|\u65b0\u7684\u7acb\u573a\u63cf\u8ff0"
+    debate-tool modify my_topic.md --pivot "A|新的立场描述"
     debate-tool live my_topic.md
 """
 
+import re
 import sys
 
 
@@ -31,9 +32,36 @@ def _print_help():
     print(__doc__.strip())
 
 
+def _normalize_argv(argv: list[str]) -> list[str]:
+    """Normalize CLI flags: lowercase + '_' → '-' for argparse compatibility.
+
+    Positional args and flag values are left untouched.
+    Only tokens starting with '--' are normalised:
+      --Cross_Exam  →  --cross-exam
+      --NO_JUDGE    →  --no-judge
+      --Rounds      →  --rounds
+    """
+    result: list[str] = []
+    for token in argv:
+        if token.startswith("--"):
+            if "=" in token:
+                flag, val = token.split("=", 1)
+                flag = "--" + re.sub(r"[_\-]+", "-", flag[2:].lower())
+                result.append(f"{flag}={val}")
+            else:
+                result.append("--" + re.sub(r"[_\-]+", "-", token[2:].lower()))
+        elif token.startswith("-") and len(token) == 2:
+            result.append(token)
+        else:
+            result.append(token)
+    return result
+
+
 def _handle_resume(argv):
     import argparse
     from pathlib import Path
+
+    argv = _normalize_argv(argv)
 
     parser = argparse.ArgumentParser(prog="debate-tool resume")
     parser.add_argument("log_file", type=Path, help="v2 日志文件 (.json)")
@@ -43,27 +71,26 @@ def _handle_resume(argv):
                         help="追加轮数 (默认 1, 0=仅执行 judge)")
     parser.add_argument("--message", "-m", default="", help="观察者消息")
     parser.add_argument("--guide", default="", help="辩手引导提示")
-    parser.add_argument("--cross-exam", nargs="?", const=1, default=None,
-                        type=int, dest="cross_exam",
-                        help="质询频率 (不填=不质询, --cross-exam=N)")
+    parser.add_argument("--cross-exam", nargs="?", const="1", default=None,
+                        dest="cross_exam",
+                        help="质询: N=前N轮, -1/ALL/*=全轮, [1,3,5]=指定轮次")
     parser.add_argument("--cot", nargs="?", const=True, default=None,
                         dest="cot", help="CoT 长度")
     parser.add_argument("--force", action="store_true", help="跳过一致性校验；add/drop 辩手时必须指定")
     parser.add_argument("--no-judge", action="store_true", dest="no_judge", help="跳过裁判总结阶段")
     parser.add_argument("--output-summary", type=Path, default=None, metavar="SUMMARY_FILE", dest="output_summary", help="指定总结文件输出路径")
-    parser.add_argument("--debug", default="", help="Debug 标志")
+    parser.add_argument("--debug", nargs="?", const=True, default=None, metavar="DEBUG_LOG",
+                        help="开启 debug 日志，可选文件路径")
     args = parser.parse_args(argv)
 
-    # debug 设置
-    if args.debug:
-        import os
-        os.environ["DEBATE_DEBUG"] = args.debug
+    if args.debug is not None:
+        from debate_tool.debug_log import init_debug_logging
+        init_debug_logging(args.debug)
 
-    # cot_length 解析
     cot_length = None
     if args.cot is not None:
         if args.cot is True:
-            cot_length = 0  # unlimited
+            cot_length = 0
         else:
             try:
                 cot_length = int(args.cot)
@@ -92,6 +119,8 @@ def _handle_resume(argv):
 def _handle_compact(argv):
     import argparse
     from pathlib import Path
+
+    argv = _normalize_argv(argv)
 
     parser = argparse.ArgumentParser(
         description="手动压缩辩论日志 — 生成 checkpoint 写入日志",
@@ -158,13 +187,15 @@ def _handle_live(argv):
     import time
     import webbrowser
 
+    argv = _normalize_argv(argv)
+
     parser = argparse.ArgumentParser(
-        description="\u542f\u52a8\u8fa9\u8bba + Web \u5b9e\u65f6\u67e5\u770b\u5668",
+        description="启动辩论 + Web 实时查看器",
     )
     parser.add_argument(
         "topic",
         nargs="?",
-        help="\u8bae\u9898 Markdown \u6587\u4ef6\uff08\u53ef\u9009\uff0c\u4e5f\u53ef\u5728\u7f51\u9875\u4e2d\u9009\u62e9\uff09",
+        help="议题 Markdown 文件（可选，也可在网页中选择）",
     )
     parser.add_argument("--port", "-p", type=int, default=5000)
     parser.add_argument("--host", type=str, default="127.0.0.1")
@@ -182,7 +213,7 @@ def _handle_live(argv):
         topic_path = Path(args.topic).resolve()
         if not topic_path.exists():
             print(
-                f"\u274c \u6587\u4ef6\u4e0d\u5b58\u5728: {topic_path}", file=sys.stderr
+                f"❌ 文件不存在: {topic_path}", file=sys.stderr
             )
             sys.exit(1)
         app.config["AUTO_START_TOPIC"] = str(topic_path)
@@ -196,7 +227,7 @@ def _handle_live(argv):
 
         threading.Thread(target=_open, daemon=True).start()
 
-    print(f"\n  \u8fa9\u8bba\u5b9e\u65f6\u67e5\u770b\u5668 (Web)")
+    print(f"\n  辩论实时查看器 (Web)")
     print(f"  {url}\n")
     app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)
 
@@ -214,13 +245,13 @@ def main():
         print(f"debate-tool {__version__}")
         sys.exit(0)
 
-    command = argv[0]
+    command = argv[0].lower()
     remaining = argv[1:]
 
     if command == "run":
         from debate_tool.runner import main as run_main
 
-        run_main(remaining or None)
+        run_main(_normalize_argv(remaining) or None)
     elif command == "resume":
         _handle_resume(remaining)
     elif command == "compact":
@@ -228,7 +259,7 @@ def main():
     elif command == "live":
         _handle_live(remaining)
     else:
-        print(f"\u672a\u77e5\u547d\u4ee4: {command}\n", file=sys.stderr)
+        print(f"未知命令: {command}\n", file=sys.stderr)
         _print_help()
         sys.exit(1)
 

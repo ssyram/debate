@@ -16,9 +16,9 @@ def inject_cot(sys_prompt, cot_length, max_reply):
 
 
 async def call_with_cot(model, sys_prompt, ctx, cot_len, max_reply, timeout, url, key):
-    dlog(f"[call_with_cot] model={model} cot={cot_len}")
+    dlog("flow.cot", f"model={model} cot={cot_len}", model=model, cot_len=cot_len)
     sys_final, max_tok = inject_cot(sys_prompt, cot_len, max_reply)
-    raw = await call_llm(model, sys_final, ctx, max_reply_tokens=max_tok, timeout=timeout, base_url=url, api_key=key)
+    raw = await call_llm(model, sys_final, ctx, max_reply_tokens=max_tok, timeout=timeout, base_url=url, api_key=key, purpose="debater.cot")
     if cot_len is None:
         return "", raw
     return await _split_cot_or_regenerate_reply(raw, model=model, base_sys_prompt=sys_prompt, user_ctx=ctx, max_reply_tokens=max_reply, timeout=timeout, base_url=url, api_key=key)

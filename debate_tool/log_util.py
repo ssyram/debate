@@ -9,7 +9,7 @@ from debate_tool.log_io import Log, SUMMARY_FILE_SUFFIX
 
 
 def save_replies(log, debaters, results):
-    dlog(f"[save_replies] {len(results)} replies")
+    dlog("flow.save_replies", f"count={len(results)}", count=len(results))
     for d, (thinking, reply) in zip(debaters, results):
         if thinking:
             log.add(d["name"], thinking, "thinking", flush=False)
@@ -18,7 +18,7 @@ def save_replies(log, debaters, results):
 
 
 def write_summary_file(out_dir, stem, title, summary, log, *, summary_path=None):
-    dlog(f"[write_summary] stem={stem}")
+    dlog("flow.write_summary", f"stem={stem}", stem=stem)
     sp = Path(summary_path) if summary_path else out_dir / f"{stem}{SUMMARY_FILE_SUFFIX}"
     sp.write_text(f"# {title} 裁判总结\n\n> {datetime.now().isoformat()}\n\n{summary}", encoding="utf-8")
     log.add(log.title or title, summary, "summary")
@@ -26,7 +26,7 @@ def write_summary_file(out_dir, stem, title, summary, log, *, summary_path=None)
 
 
 def write_summary_resume(log, cfg, summary, *, summary_path=None):
-    dlog(f"[write_summary_resume]")
+    dlog("flow.write_summary_resume", "resume summary")
     stem = log.path.stem.removesuffix("_debate_log")
     sp = Path(summary_path) if summary_path else log.path.parent / f"{stem}{SUMMARY_FILE_SUFFIX}"
     sp.write_text(f"# {log.title} 裁判总结\n\n> {datetime.now().isoformat()}\n\n{summary}", encoding="utf-8")

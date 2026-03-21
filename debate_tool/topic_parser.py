@@ -19,11 +19,53 @@ from debate_tool.core import (
 )
 
 
-# ── YAML Front-matter 解析 ───────────────────────────────
+# ── Key normalisation ────────────────────────────────────
+
+def normalize_key(key: str) -> str:
+    """Normalize a YAML / CLI key: lowercase + replace '-' with '_'.
+
+    This ensures users never need to worry about casing or hyphen vs underscore:
+      Cross-Exam  →  cross_exam
+      No-Judge    →  no_judge
+      ROUNDS      →  rounds
+    """
+    return key.lower().replace("-", "_")
+
+
+# ── Shared front-matter extraction ───────────────────────
+
+def _parse_front_matter(text: str) -> tuple[dict, str]:
+    """Split a Markdown document into (front_matter_dict, body_str).
+
+    Keys in the YAML block are normalised via ``normalize_key`` so that
+    casing and hyphen/underscore are irrelevant.
+
+    Returns ({}, full_text) when no valid ``---`` fenced YAML is found.
+    """
+    if not text.startswith("---"):
+        return {}, text
+
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}, text
+
+    try:
+        raw = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError:
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+
+    front = {normalize_key(k): v for k, v in raw.items()}
+    body = parts[2].strip()
+    return front, body
+
+
+# ── YAML field coercion helpers ──────────────────────────
 
 
 def _parse_early_stop(val) -> float:
-    """Parse early_stop: False → 0, True → default threshold, float → that value."""
+    """Parse early_stop: False -> 0, True -> default threshold, float -> that value."""
     if val is False or val is None or val == 0:
         return 0.0
     if val is True:
@@ -40,9 +82,9 @@ def _parse_early_stop(val) -> float:
 def _parse_cot(val) -> int | None:
     """Parse cot YAML field.
 
-    cot: false / null / 0  → None (disabled)
-    cot: true              → 0   (enabled, no token limit)
-    cot: 2000              → 2000 (enabled, 2000-token thinking budget)
+    cot: false / null / 0  -> None (disabled)
+    cot: true              -> 0   (enabled, no token limit)
+    cot: 2000              -> 2000 (enabled, 2000-token thinking budget)
     """
     if val is False or val is None or val == 0:
         return None
@@ -59,6 +101,11 @@ def _coerce_int(value, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _parse_cross_exam_field(val):
+    from debate_tool.core_loop import parse_cross_exam
+    return parse_cross_exam(val)
 
 
 def _normalize_debaters(raw_debaters) -> list[dict]:
@@ -106,28 +153,26 @@ def _expand_env(value: str) -> str:
     return re.sub(r"\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)", _replace, value)
 
 
+def _parse_bool(val, default: bool = False) -> bool:
+    """Coerce a YAML value to bool (handles strings like 'true'/'false')."""
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes")
+    return bool(val)
+
+
+# ── Public parsers ───────────────────────────────────────
+
+
 def parse_topic_file(path: Path) -> dict:
-    """解析 Markdown 文件的 YAML front-matter + body。"""
+    """Parse a Markdown topic file (YAML front-matter + body)."""
     text = path.read_text(encoding="utf-8")
+    front, body = _parse_front_matter(text)
 
-    # 分离 front-matter 和 body
-    if text.startswith("---"):
-        parts = text.split("---", 2)
-        if len(parts) >= 3:
-            try:
-                front = yaml.safe_load(parts[1]) or {}
-            except yaml.YAMLError:
-                front = {}
-            if not isinstance(front, dict):
-                front = {}
-            front = {k.replace("-", "_"): v for k, v in front.items()}
-            body = parts[2].strip()
-        else:
-            front, body = {}, text
-    else:
-        front, body = {}, text
-
-    # 组装配置（带默认值）
+    # Build config with defaults
     cfg = {
         "title": str(front.get("title", path.stem) or path.stem),
         "rounds": _coerce_int(front.get("rounds", 3), 3),
@@ -151,15 +196,16 @@ def parse_topic_file(path: Path) -> dict:
         ) or "").strip(),
         "judge_instructions": str(front.get("judge_instructions", "") or "").strip(),
         "topic_body": body,
-        # API 配置：front-matter > 环境变量（支持 ${VAR} 占位符展开）
+        # API config: front-matter > env vars (supports ${VAR} expansion)
         "base_url": _expand_env(str(front.get("base_url", "") or "").strip()),
         "api_key": _expand_env(str(front.get("api_key", "") or "").strip()),
         # Mode fields
-        "cross_exam": _coerce_int(front.get("cross_exam", 0), 0),
+        "cross_exam": _parse_cross_exam_field(front.get("cross_exam", 0)),
         "early_stop": _parse_early_stop(front.get("early_stop", False)),
         "cot_length": _parse_cot(front.get("cot", None)),
+        "no_judge": _parse_bool(front.get("no_judge", False)),
     }
-    # 透传所有未明确提取的 front-matter 字段（供 compact 等扩展配置使用）
+    # Pass through all non-extracted front-matter fields (for compact etc.)
     for k, v in front.items():
         if k not in cfg:
             cfg[k] = _expand_env(str(v).strip()) if isinstance(v, str) else v
@@ -167,53 +213,17 @@ def parse_topic_file(path: Path) -> dict:
 
 
 def parse_resume_topic(path: Path) -> tuple[dict, str]:
-    """解析 Resume Topic 文件（YAML front-matter + Markdown body）。
+    """Parse a Resume Topic file (YAML front-matter + Markdown body).
 
-    返回 (overrides_dict, message_body)。
-    - 运行控制字段 rounds、guide 提取后不记入 config_override
-    - 其余字段构成 cfg_overrides dict
+    Returns (overrides_dict, message_body).
 
-    Resume Topic 格式（YAML front-matter 含增量配置，body 为观察者消息）：
-    ---
-    rounds: 2
-    judge_instructions: "..."
-    middle_task: "..."
-    add_debaters:
-      - name: X
-        model: gpt-5
-        style: "..."
-    drop_debaters:
-      - 旧辩手名
-    ---
-
-    消息正文（观察者消息）
+    The returned overrides dict uses normalised keys (lowercase, underscores).
+    Caller is responsible for popping runtime-control fields like ``rounds``,
+    ``guide``, ``force``, ``no_judge`` as needed.
     """
     text = path.read_text(encoding="utf-8")
-    # 分离 front-matter 和 body（复用 topic 文件的解析逻辑）
-    if text.startswith("---"):
-        parts = text.split("---", 2)
-        if len(parts) >= 3:
-            fm_text = parts[1].strip()
-            body = parts[2].strip()
-        else:
-            fm_text = ""
-            body = text
-    else:
-        fm_text = ""
-        body = text
-
-    overrides: dict = {}
-    if fm_text:
-        try:
-            raw = yaml.safe_load(fm_text)
-            if isinstance(raw, dict):
-                overrides = {k.replace("-", "_"): v for k, v in raw.items()}
-        except Exception:
-            pass
-
-    # 运行控制字段：提取后不记入 config_override
-    # (调用方负责从返回的 overrides 中 pop 这些字段)
-    return overrides, body
+    front, body = _parse_front_matter(text)
+    return front, body
 
 
 def _mask_key(key: str) -> str:
