@@ -1,0 +1,113 @@
+{
+  "created_at": "__TS__",
+  "entries": [
+    {
+      "content": "先抓核心价值，强调反馈速度与试错成本。",
+      "name": "实用派",
+      "seq": 1,
+      "tag": "thinking",
+      "ts": "__TS__"
+    },
+    {
+      "content": "先上线能更快验证需求，减少闭门造车。",
+      "name": "实用派",
+      "seq": 2,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "突出首发质量与信誉成本，避免仓促上线。",
+      "name": "理想派",
+      "seq": 3,
+      "tag": "thinking",
+      "ts": "__TS__"
+    },
+    {
+      "content": "先打磨质量可减少返工与品牌损害。",
+      "name": "理想派",
+      "seq": 4,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "回应质量担忧，但坚持迭代能更快修正。",
+      "name": "实用派",
+      "seq": 5,
+      "tag": "thinking",
+      "ts": "__TS__"
+    },
+    {
+      "content": "快速迭代更能贴近用户与市场变化。",
+      "name": "实用派",
+      "seq": 6,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "继续强调返工代价，主打长期稳定收益。",
+      "name": "理想派",
+      "seq": 7,
+      "tag": "thinking",
+      "ts": "__TS__"
+    },
+    {
+      "content": "稳定发布能降低维护成本与用户流失。",
+      "name": "理想派",
+      "seq": 8,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "裁定：实用派更有说服力，验证需求的优势更直接。",
+      "name": "测试：CoT思考模式",
+      "seq": 9,
+      "tag": "summary",
+      "ts": "__TS__"
+    }
+  ],
+  "format": "debate-tool-log",
+  "initial_config": {
+    "compact_base_url": "__URL__",
+    "compact_check_base_url": "__URL__",
+    "compact_check_model": null,
+    "compact_max_tokens": null,
+    "compact_message": null,
+    "compact_model": null,
+    "compact_threshold": null,
+    "constraints": "",
+    "cot": 80,
+    "cross_exam": 0,
+    "debaters": [
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "实用派",
+        "style": "注重实用性和效率"
+      },
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "理想派",
+        "style": "注重完美和长远"
+      }
+    ],
+    "early_stop": 0.0,
+    "embedding_model": null,
+    "final_task": "最终总结，60字以内。",
+    "judge": {
+      "base_url": "__URL__",
+      "max_tokens": 200,
+      "model": "gpt-4o-mini",
+      "name": "裁判"
+    },
+    "judge_instructions": "简短裁定，100字以内。",
+    "max_reply_tokens": 150,
+    "middle_task": "反驳对方，80字以内。",
+    "round1_task": "陈述核心论点，80字以内。",
+    "timeout": 120
+  },
+  "title": "测试：CoT思考模式",
+  "topic": "软件开发中，\"先上线再迭代\"还是\"做到完美再发布\"，哪种策略更好？",
+  "updated_at": "__TS__",
+  "version": 2
+}

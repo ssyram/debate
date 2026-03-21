@@ -1,0 +1,115 @@
+{
+  "created_at": "__TS__",
+  "entries": [
+    {
+      "content": "电动车通勤成本低，城市使用更安静便捷。",
+      "name": "甲方",
+      "seq": 1,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "燃油车补能快，长途与寒冷地区更稳妥。",
+      "name": "乙方",
+      "seq": 2,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "{\n  \"target\": \"乙方\",\n  \"reason\": \"对乙方的论点存在疑问\",\n  \"questions\": [\n    \"家庭日常短途占多，长途优势是否被夸大？\",\n    \"燃油价格波动下，成本优势如何维持？\"\n  ]\n}",
+      "name": "甲方 → 乙方",
+      "seq": 3,
+      "tag": "cross_exam",
+      "ts": "__TS__"
+    },
+    {
+      "content": "{\n  \"target\": \"甲方\",\n  \"reason\": \"对甲方的论点存在疑问\",\n  \"questions\": [\n    \"节假日排队充电时，电动车如何保证效率？\",\n    \"冬季续航下降后，家用便利是否受影响？\"\n  ]\n}",
+      "name": "乙方 → 甲方",
+      "seq": 4,
+      "tag": "cross_exam",
+      "ts": "__TS__"
+    },
+    {
+      "content": "家用短途场景里，补能与续航已足够。",
+      "name": "甲方",
+      "seq": 5,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "保值和基础设施成熟仍是燃油车优势。",
+      "name": "乙方",
+      "seq": 6,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "综合成本与体验，电动车更适合多数家庭。",
+      "name": "甲方",
+      "seq": 7,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "若重视通用性，燃油车目前仍更可靠。",
+      "name": "乙方",
+      "seq": 8,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "裁定：甲方更贴近家庭日常场景，论证略强。",
+      "name": "测试：数组质询模式",
+      "seq": 9,
+      "tag": "summary",
+      "ts": "__TS__"
+    }
+  ],
+  "format": "debate-tool-log",
+  "initial_config": {
+    "compact_base_url": "__URL__",
+    "compact_check_base_url": "__URL__",
+    "compact_check_model": null,
+    "compact_max_tokens": null,
+    "compact_message": null,
+    "compact_model": null,
+    "compact_threshold": null,
+    "constraints": "",
+    "cot": null,
+    "cross_exam": [
+      1
+    ],
+    "debaters": [
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "甲方",
+        "style": "支持电动车"
+      },
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "乙方",
+        "style": "支持燃油车"
+      }
+    ],
+    "early_stop": 0.0,
+    "embedding_model": null,
+    "final_task": "最终陈词，60字以内。",
+    "judge": {
+      "base_url": "__URL__",
+      "max_tokens": 200,
+      "model": "gpt-4o-mini",
+      "name": "裁判"
+    },
+    "judge_instructions": "简短裁定，100字以内。",
+    "max_reply_tokens": 150,
+    "middle_task": "回应对方，80字以内。",
+    "round1_task": "陈述核心论点，80字以内。",
+    "timeout": 120
+  },
+  "title": "测试：数组质询模式",
+  "topic": "电动车和燃油车，哪种更适合作为家庭用车？",
+  "updated_at": "__TS__",
+  "version": 2
+}

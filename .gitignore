@@ -42,3 +42,9 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+# Test runtime output
+test/workdir/
+
+# Work planning artifacts
+.sisyphus/

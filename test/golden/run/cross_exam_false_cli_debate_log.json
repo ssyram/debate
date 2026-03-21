@@ -1,0 +1,85 @@
+{
+  "created_at": "__TS__",
+  "entries": [
+    {
+      "content": "AI提升效率与医疗水平，整体收益更大。",
+      "name": "乐观派",
+      "seq": 1,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "AI会放大失业与误判，风险不能低估。",
+      "name": "谨慎派",
+      "seq": 2,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "我方承认风险，但治理可控且收益更广。",
+      "name": "乐观派",
+      "seq": 3,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "若规则滞后，AI伤害会先于收益出现。",
+      "name": "谨慎派",
+      "seq": 4,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "裁定：乐观派论证更完整，但也应重视治理。",
+      "name": "测试：质询模式",
+      "seq": 5,
+      "tag": "summary",
+      "ts": "__TS__"
+    }
+  ],
+  "format": "debate-tool-log",
+  "initial_config": {
+    "compact_base_url": "__URL__",
+    "compact_check_base_url": "__URL__",
+    "compact_check_model": null,
+    "compact_max_tokens": null,
+    "compact_message": null,
+    "compact_model": null,
+    "compact_threshold": null,
+    "constraints": "",
+    "cot": null,
+    "cross_exam": 0,
+    "debaters": [
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "乐观派",
+        "style": "认为AI对社会利大于弊"
+      },
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "谨慎派",
+        "style": "认为AI风险不可忽视"
+      }
+    ],
+    "early_stop": 0.0,
+    "embedding_model": null,
+    "final_task": "最终陈词，60字以内。",
+    "judge": {
+      "base_url": "__URL__",
+      "max_tokens": 200,
+      "model": "gpt-4o-mini",
+      "name": "裁判"
+    },
+    "judge_instructions": "简短裁定，100字以内。",
+    "max_reply_tokens": 150,
+    "middle_task": "回应质询并深化论点，80字以内。",
+    "round1_task": "陈述核心论点，80字以内。",
+    "timeout": 120
+  },
+  "title": "测试：质询模式",
+  "topic": "AI技术的快速发展对人类社会是利大于弊还是弊大于利？",
+  "updated_at": "__TS__",
+  "version": 2
+}

@@ -1,0 +1,96 @@
+{
+  "created_at": "__TS__",
+  "entries": [
+    {
+      "content": "猫是理想的家庭宠物。猫独立安静，饲养成本低，适合现代家庭，是最佳伴侣选择。",
+      "name": "正方",
+      "seq": 1,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "狗是人类最忠实的伙伴。狗热情互动，促进运动和社交，是无可替代的家庭成员。",
+      "name": "反方",
+      "seq": 2,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "综上，猫在陪伴性、成本和易养程度上均占优，是家庭宠物的最佳选择。",
+      "name": "正方",
+      "seq": 3,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "总结：狗的忠诚与陪伴价值远超其养护成本，是家庭宠物的首选。",
+      "name": "反方",
+      "seq": 4,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "裁定：正方论据更具说服力。猫的低成本和易养性符合现代家庭需求。",
+      "name": "测试：基础运行",
+      "seq": 5,
+      "tag": "summary",
+      "ts": "__TS__"
+    },
+    {
+      "content": "更新 middle_task；更新 final_task",
+      "name": "@系统",
+      "overrides": {
+        "final_task": "用一句话总结你的最终立场。",
+        "middle_task": "从经济学角度分析对方论点的薄弱环节，100字以内。"
+      },
+      "seq": 6,
+      "tag": "config_override",
+      "ts": "__TS__"
+    }
+  ],
+  "format": "debate-tool-log",
+  "initial_config": {
+    "compact_base_url": "__URL__",
+    "compact_check_base_url": "__URL__",
+    "compact_check_model": "gpt-4o-mini",
+    "compact_max_tokens": null,
+    "compact_message": null,
+    "compact_model": "gpt-4o-mini",
+    "compact_threshold": null,
+    "constraints": "",
+    "cot": null,
+    "cross_exam": 0,
+    "debaters": [
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "正方",
+        "style": "支持猫作为最佳宠物"
+      },
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "反方",
+        "style": "支持狗作为最佳宠物"
+      }
+    ],
+    "early_stop": 0.0,
+    "embedding_model": null,
+    "final_task": "最终总结，60字以内。",
+    "judge": {
+      "base_url": "__URL__",
+      "max_tokens": 200,
+      "model": "gpt-4o-mini",
+      "name": "裁判"
+    },
+    "judge_instructions": "简短裁定谁更有说服力，100字以内。",
+    "max_reply_tokens": 150,
+    "middle_task": "反驳对方，80字以内。",
+    "round1_task": "简述你的核心观点，80字以内。",
+    "timeout": 120
+  },
+  "title": "测试：基础运行",
+  "topic": "猫和狗，哪种动物更适合作为家庭宠物？请从陪伴性、成本、易养程度三方面讨论。",
+  "updated_at": "__TS__",
+  "version": 2
+}

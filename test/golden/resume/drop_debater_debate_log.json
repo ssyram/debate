@@ -1,0 +1,149 @@
+{
+  "created_at": "__TS__",
+  "entries": [
+    {
+      "content": "Python生态成熟，开发效率对后端最关键。",
+      "name": "Python派",
+      "seq": 1,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "Rust兼顾性能与安全，适合未来关键后端。",
+      "name": "Rust派",
+      "seq": 2,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "Go部署简单并发强，非常适合工程化后端。",
+      "name": "Go派",
+      "seq": 3,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "在AI与自动化结合上，Python优势最明显。",
+      "name": "Python派",
+      "seq": 4,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "长期看，Rust能减少内存错误与运维风险。",
+      "name": "Rust派",
+      "seq": 5,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "综合学习成本和稳定性，Go更适合团队落地。",
+      "name": "Go派",
+      "seq": 6,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "裁定：Python派略胜，生态完整性论据更直接。",
+      "name": "测试：三辩手",
+      "seq": 7,
+      "tag": "summary",
+      "ts": "__TS__"
+    },
+    {
+      "content": "移除辩手：Go派",
+      "name": "@系统",
+      "overrides": {
+        "drop_debaters": [
+          "Go派"
+        ],
+        "mock_responses": {
+          "debaters": {
+            "Python派": {
+              "3": "去掉Go派后，Python的生态优势更加突出。"
+            },
+            "Rust派": {
+              "3": "少了Go派，Rust的性能安全优势更加鲜明。"
+            }
+          },
+          "judge": "裁定：Python派论据更充分，生态优势突出。"
+        }
+      },
+      "seq": 8,
+      "tag": "config_override",
+      "ts": "__TS__"
+    },
+    {
+      "content": "作为Python派，在第4轮，我坚持自己的立场并提出论据支持。",
+      "name": "Python派",
+      "seq": 9,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "作为Rust派，在第4轮，我坚持自己的立场并提出论据支持。",
+      "name": "Rust派",
+      "seq": 10,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "裁定：Python派略胜，生态完整性论据更直接。",
+      "name": "裁判",
+      "seq": 11,
+      "tag": "summary",
+      "ts": "__TS__"
+    }
+  ],
+  "format": "debate-tool-log",
+  "initial_config": {
+    "compact_base_url": "__URL__",
+    "compact_check_base_url": "__URL__",
+    "compact_check_model": null,
+    "compact_max_tokens": null,
+    "compact_message": null,
+    "compact_model": null,
+    "compact_threshold": null,
+    "constraints": "",
+    "cot": null,
+    "cross_exam": 0,
+    "debaters": [
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "Python派",
+        "style": "主张Python是最佳语言"
+      },
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "Rust派",
+        "style": "主张Rust是未来方向"
+      },
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "Go派",
+        "style": "主张Go是工程最优选"
+      }
+    ],
+    "early_stop": 0.0,
+    "embedding_model": null,
+    "final_task": "最终总结，60字以内。",
+    "judge": {
+      "base_url": "__URL__",
+      "max_tokens": 200,
+      "model": "gpt-4o-mini",
+      "name": "裁判"
+    },
+    "judge_instructions": "简短裁定哪门语言最优，100字以内。",
+    "max_reply_tokens": 150,
+    "middle_task": "反驳其他辩手观点，80字以内。",
+    "round1_task": "陈述你的核心论点，80字以内。",
+    "timeout": 120
+  },
+  "title": "测试：三辩手",
+  "topic": "Python、Rust、Go，哪门编程语言最适合2026年的后端开发？",
+  "updated_at": "__TS__",
+  "version": 2
+}

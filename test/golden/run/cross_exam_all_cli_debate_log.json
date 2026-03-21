@@ -1,0 +1,99 @@
+{
+  "created_at": "__TS__",
+  "entries": [
+    {
+      "content": "稳健策略重视本金安全，适合长期积累。",
+      "name": "保守派",
+      "seq": 1,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "激进策略能抓住高成长机会，提高上限。",
+      "name": "激进派",
+      "seq": 2,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "{\n  \"target\": \"激进派\",\n  \"reason\": \"对激进派的论点存在疑问\",\n  \"questions\": [\n    \"请激进派进一步解释论据。\",\n    \"是否有数据支撑？\"\n  ]\n}",
+      "name": "保守派 → 激进派",
+      "seq": 3,
+      "tag": "cross_exam",
+      "ts": "__TS__"
+    },
+    {
+      "content": "{\n  \"target\": \"保守派\",\n  \"reason\": \"对保守派的论点存在疑问\",\n  \"questions\": [\n    \"请保守派进一步解释论据。\",\n    \"是否有数据支撑？\"\n  ]\n}",
+      "name": "激进派 → 保守派",
+      "seq": 4,
+      "tag": "cross_exam",
+      "ts": "__TS__"
+    },
+    {
+      "content": "控制回撤比追求暴利更适合普通投资者。",
+      "name": "保守派",
+      "seq": 5,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "年轻阶段可承受波动，收益弹性更重要。",
+      "name": "激进派",
+      "seq": 6,
+      "tag": "",
+      "ts": "__TS__"
+    },
+    {
+      "content": "裁定：保守派更稳妥，普通投资者适配性更高。",
+      "name": "测试：Dry Run",
+      "seq": 7,
+      "tag": "summary",
+      "ts": "__TS__"
+    }
+  ],
+  "format": "debate-tool-log",
+  "initial_config": {
+    "compact_base_url": "__URL__",
+    "compact_check_base_url": "__URL__",
+    "compact_check_model": null,
+    "compact_max_tokens": null,
+    "compact_message": null,
+    "compact_model": null,
+    "compact_threshold": null,
+    "constraints": "",
+    "cot": null,
+    "cross_exam": -1,
+    "debaters": [
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "保守派",
+        "style": "主张稳健保守的投资策略"
+      },
+      {
+        "base_url": "__URL__",
+        "model": "gpt-4o-mini",
+        "name": "激进派",
+        "style": "主张高风险高回报的投资策略"
+      }
+    ],
+    "early_stop": 0.0,
+    "embedding_model": null,
+    "final_task": "最终总结，60字以内。",
+    "judge": {
+      "base_url": "__URL__",
+      "max_tokens": 200,
+      "model": "gpt-4o-mini",
+      "name": "裁判"
+    },
+    "judge_instructions": "简短裁定，100字以内。",
+    "max_reply_tokens": 150,
+    "middle_task": "反驳对方，80字以内。",
+    "round1_task": "陈述核心论点，80字以内。",
+    "timeout": 120
+  },
+  "title": "测试：Dry Run",
+  "topic": "个人投资应该选择稳健保守还是积极激进的策略？",
+  "updated_at": "__TS__",
+  "version": 2
+}

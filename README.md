@@ -296,7 +296,44 @@ early_stop: 0.7        # 自定义阈值 70%
 
 可与 `--cross-exam` 组合使用。
 
-## 5. 文件结构
+## 5. 测试
+
+项目包含完整的端到端集成测试套件，通过内置 Mock Server 完全离线运行，无需真实 LLM API。
+
+```bash
+# 运行全部测试（Mock 模式，无需 API key）
+python3 test/test.py
+
+# 静默模式
+python3 test/test.py --quiet
+
+# 仅运行快速测试（dry_run + error 系列）
+python3 test/test.py --quick
+
+# 按名称过滤
+python3 test/test.py --filter basic,cross_exam
+
+# 生成/更新 golden 参考文件
+python3 test/test.py --generate-golden
+```
+
+测试覆盖 58 个场景、62 个特性维度，包括：
+- **RUN 系列**（13 项）：basic、cross_exam、cot、constraints、early_stop 等
+- **RESUME 系列**（10 项）：message、guide、add/drop debater、judge override 等
+- **COMPACT 系列**（10 项）：全量压缩、幂等性、keep-last、resume chain 等
+- **DEGRADATION 系列**（2 项）：Phase A/B 重试降级
+- **CANARY 系列**（3 项）：constraints/message/guide prompt 注入验证
+- **ERROR 系列**（12 项）：缺少文件、非法参数、--force 校验等
+- **NEW 系列**（8 项）：version、modify、drop_debater 等
+
+**核心机制**：
+- **Mock Server**：轻量级 HTTP 服务器，模拟 OpenAI Chat/Embeddings API，路由表从 topic 文件的 `mock_responses` YAML 字段自动加载
+- **Golden 对比**：归一化时间戳/URL/API key 后，与 `test/golden/` 下的参考文件逐字符比较
+- **结构性检查**：独立于文本内容的结构断言（辩手数、轮数、质询位置等）
+
+> 详细说明见 [test/README.md](test/README.md)
+
+## 6. 文件结构
 
 ```
 debate-tool/
@@ -307,20 +344,33 @@ debate-tool/
 ├── requirements/          # 传统 requirements 文件（向后兼容）
 │   ├── core.txt
 │   └── web.txt
-└── debate_tool/
-    ├── __init__.py        # 版本
-    ├── __main__.py        # 统一入口路由（run / resume / compact / live）
-    ├── runner.py          # 辩论运行器（核心引擎）
-    ├── session.py         # DebateSession（Web live 用，通过 subprocess 调用 CLI）
-    ├── core.py            # 纯逻辑：默认值、YAML 生成、文件 I/O
-    └── web/
-        ├── __init__.py
-        ├── __main__.py    # Web 入口
-        ├── app.py         # Flask 路由 + API 端点
-        ├── live.py        # 辩论实时查看器 Blueprint（subprocess + 文件监视 → SSE）
-        └── templates/
-            ├── debate_live.html  # 统一 UI（含新建辩论 Modal）
-            └── wizard.html       # 完整配置向导（/wizard 路由）
+├── debate_tool/
+│   ├── __init__.py        # 版本
+│   ├── __main__.py        # 统一入口路由（run / resume / compact / live）
+│   ├── runner.py          # 辩论运行器（核心引擎）
+│   ├── session.py         # DebateSession（Web live 用，通过 subprocess 调用 CLI）
+│   ├── core.py            # 纯逻辑：默认值、YAML 生成、文件 I/O
+│   └── web/
+│       ├── __init__.py
+│       ├── __main__.py    # Web 入口
+│       ├── app.py         # Flask 路由 + API 端点
+│       ├── live.py        # 辩论实时查看器 Blueprint（subprocess + 文件监视 → SSE）
+│       └── templates/
+│           ├── debate_live.html  # 统一 UI（含新建辩论 Modal）
+│           └── wizard.html       # 完整配置向导（/wizard 路由）
+└── test/
+    ├── test.py              # 端到端测试主文件
+    ├── mock_server.py       # Mock HTTP 服务器
+    ├── mock_routes.py       # 路由表（从 topic YAML 解析）
+    ├── golden_compare.py    # Golden 文件对比工具
+    ├── structural_checks.py # 结构性断言
+    ├── README.md            # 测试文档
+    ├── topics/              # 测试用 topic 文件（含 mock_responses）
+    ├── resume_topics/       # Resume 测试用覆盖文件
+    └── golden/              # Golden 参考文件（标准答案）
+        ├── run/
+        ├── resume/
+        └── compact/
 ```
 
 ## License

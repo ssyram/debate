@@ -1,52 +1,75 @@
 # 测试覆盖报告
 
-> 重构版本：v2 Log Schema（Log-Centric 架构）
-> 日期：2026-03-16
+> 更新日期：2026-03-22
 
-## 基线（重构前）
-- 通过：25 / 失败：3（既有问题，非新引入）
+## 测试体系
 
-## 当前状态
-- 通过：41 / 失败：3（与基线相同的既有问题）
-- 新增通过测试：+17（来自本次重构新增的 6 个测试类）
+debate-tool 包含两层测试：
 
-## 既有失败（未修复，与本次重构无关）
+### 1. 端到端集成测试（`test/test.py`）
 
-| # | 测试名 | 失败原因 |
-|---|--------|---------|
-| 1 | `ConversionAndLogTests::test_compact_log_keeps_json_valid` | compact_log 需要 topic path 或 initial_config |
-| 2 | `RunAndResumeTests::test_resume_appends_human_cross_exam_and_summary` | resume() 签名变更，测试 mock 未同步 |
-| 3 | `RunAndResumeTests::test_run_supports_cot_cross_exam_and_optional_middle_task` | cross-exam 阶段 IndexError，mock 未同步 |
+通过内置 Mock Server 完全离线运行，覆盖所有功能路径。
 
-## 测试类总览
+- **测试总数**：58
+- **特性维度**：62
+- **覆盖率**：100%
 
-### 原有测试类
+| 系列 | 数量 | 说明 |
+|------|------|------|
+| RUN | 13 | basic、cross_exam（含 array/all/false CLI）、cot、no_judge、constraints、early_stop 等 |
+| RESUME | 10 | basic、message、guide、cross_exam、no_judge、judge_only、topic/judge override、add/drop debater 等 |
+| COMPACT | 10 | 全量、幂等性、resume chain、message、keep-last（zero/negative/partial/excessive/double/chain） |
+| DEGRADATION | 2 | Phase A 重试（非法 JSON→成功）、Phase B 全链降级（bad JSON→retry, NO→YES, DEFECTION→correction→REFINEMENT） |
+| CANARY | 3 | constraints/message/guide 的 prompt 注入验证 |
+| ERROR | 12 | 缺少文件、未知命令、非法 JSON、--force 校验、负数参数、modify 错误场景等 |
+| NEW | 8 | version、early_stop、drop_debater、resume_cot、modify（含 add/drop force、double） |
 
-| 测试类 | 测试数 | 通过 | 失败 | 说明 |
-|--------|--------|------|------|------|
-| `TopicParsingTests` | 2 | 2 | 0 | YAML/frontmatter 解析 |
-| `CrossExamParsingTests` | 8 | 8 | 0 | 质询目标提取 |
-| `CrossExamFlowTests` | 3 | 3 | 0 | 质询并发流程 |
-| `IdentifyFilesTests` | 3 | 3 | 0 | 文件识别逻辑 |
-| `LLMCompatibilityTests` | 2 | 2 | 0 | LLM 响应格式兼容性；重试逻辑 |
-| `CliOptionTests` | 1 | 1 | 0 | CLI dry-run 覆盖报告 |
-| `ConversionAndLogTests` | 3 | 2 | 1 | 日志转换，1 个既有失败 |
-| `RunAndResumeTests` | 2 | 0 | 2 | 运行/续跑集成，2 个既有失败 |
-| `TopicConsistencyCheckTests` | 3 | 3 | 0 | 已替换为 v2 validate 测试 |
+运行方式：
+```bash
+python3 test/test.py          # 全部测试（Mock 模式）
+python3 test/test.py --quick  # 仅快速测试
+```
 
-### 本次新增测试类（v2 重构验证）
+> 详细说明见 [test/README.md](../test/README.md)
 
-| 测试类 | 测试数 | 通过 | 覆盖内容 |
-|--------|--------|------|---------|
-| `LogSchemaV2Tests` | 2 | 2 | v2 格式写入；v1 格式报错退出 |
-| `ResolveEffectiveConfigTests` | 5 | 5 | 无 override；单次；多次累积；add+drop；judge override |
-| `ResumeTopicParseTests` | 4 | 4 | YAML 解析；body 提取；add/drop；无 front-matter |
-| `BuildInitialConfigTests` | 1 | 1 | api_key 排除；base_url 保留；compact 字段 |
-| `MigrationScriptTests` | 1 | 1 | v1→v2 迁移正确性 |
-| `DescribeOverridesTests` | 4 | 4 | 空 overrides；middle_task；add；drop |
+### 2. 单元测试（`tests/test_runner_json_logs.py`）
 
-## 测试模式说明
+使用 `unittest` + `unittest.mock.patch` 直接 mock `call_llm`，不依赖 Mock Server。
 
-- 所有集成测试（RunAndResumeTests）使用 `fake_call_llm` mock LLM 调用，无实际网络请求
-- 迁移脚本测试使用 `test_edo.md`（江户幕府辩题，gpt-4o-mini）作为 fixture
-- v2 Schema 测试使用临时目录（`tempfile.TemporaryDirectory`）
+| 测试类 | 测试数 | 覆盖内容 |
+|--------|--------|---------|
+| `TopicParsingTests` | 2 | YAML/frontmatter 解析容错 |
+| `CrossExamParsingTests` | 8 | 质询目标提取（JSON、标记、模糊匹配） |
+| `CrossExamFlowTests` | 3 | 质询并发流程、修复、无意见降级 |
+| `IdentifyFilesTests` | 3 | 文件识别逻辑（log/topic 区分） |
+| `LLMCompatibilityTests` | 2 | LLM 响应格式兼容性；空响应重试 |
+| `CliOptionTests` | 1 | CLI dry-run 覆盖报告 |
+| `ConversionAndLogTests` | 3 | 日志转换、格式校验、compact 完整性 |
+| `RunAndResumeTests` | 2 | 运行/续跑集成（CoT + cross-exam + resume） |
+| `TopicConsistencyCheckTests` | 3 | 一致性校验、force 跳过、不匹配告警 |
+| `LogSchemaV2Tests` | 2 | v2 格式写入；v1 格式报错退出 |
+| `ResolveEffectiveConfigTests` | 5 | 无 override；单次；多次累积；add+drop；judge override |
+| `ResumeTopicParseTests` | 4 | YAML 解析；body 提取；add/drop；无 front-matter |
+| `BuildInitialConfigTests` | 1 | api_key 排除；base_url 保留；compact 字段 |
+| `MigrationScriptTests` | 1 | v1→v2 迁移正确性 |
+| `DescribeOverridesTests` | 4 | 空 overrides；middle_task；add；drop |
+
+## 特性覆盖矩阵
+
+端到端测试覆盖的 62 个特性维度：
+
+```
+debater, judge, golden, dry_run, config_validation, cross_exam, cross_exam_all,
+cot, no_judge, rounds_override, multi_debater, constraints, cross_exam_array,
+cross_exam_cli, cross_exam_disable, resume, message_inject, guide, judge_only,
+topic_override, judge_override, add_debater, force, compact.phase_a,
+compact.phase_b, validity_check, embedding, compact.idempotence,
+compact_checkpoint, compact.resume, compact.message, compact.prompt_injection,
+compact.keep_last, compact.keep_last.zero, compact.keep_last.negative,
+compact.keep_last.partial, compact.keep_last.excessive, compact.keep_last.double,
+compact.keep_last.chain, compact.phase_a.retry, compact.validity_retry,
+compact.drift_correction, compact.correction, canary, prompt_placement, error,
+missing_file, unknown_cmd, wrong_file_type, force_required, invalid_json, usage,
+invalid_arg, modify, missing_arg, cli, version, early_stop, drop_debater,
+idempotence
+```
