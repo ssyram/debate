@@ -292,7 +292,7 @@ def _build_llm_cmd(args, prompt, *, model=None):
         m = model or getattr(args, 'refine_model', None)
         if m:
             cmd += ["-m", m]
-        cmd += ["-f", pfile, "Read and execute the instructions in the attached file exactly."]
+        cmd += ["Read and execute the instructions in the attached file exactly.", "-f", pfile]
         return cmd
     cmd = [args.claude_bin, "--dangerously-skip-permissions"]
     m = model or getattr(args, 'refine_model', None)
@@ -308,7 +308,7 @@ def _build_check_cmd(args, prompt):
         cmd = ["opencode", "run"]
         if getattr(args, 'opencode_model', None):
             cmd += ["-m", args.opencode_model]
-        cmd += ["-f", pfile, "Read and execute the instructions in the attached file exactly."]
+        cmd += ["Read and execute the instructions in the attached file exactly.", "-f", pfile]
         return cmd
     return [args.claude_bin, "--dangerously-skip-permissions", "-p", prompt]
 
@@ -603,7 +603,7 @@ def parse_args():
                    help="Model for opencode finegrained-check (default: yunwu/qwen3.5-plus)")
     args = p.parse_args()
     if args.refine_model is None:
-        args.refine_model = "yunwu/qwen3.5-plus" if args.use_opencode else "claude-haiku-4-5-20251001"
+        args.refine_model = "qwen3.5-plus" if args.use_opencode else "claude-haiku-4-5-20251001"
     return args
 
 def main():

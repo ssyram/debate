@@ -35,6 +35,11 @@ python3 -m debate_tool compact topic_debate_log.md --compress ALL --token-budget
 
 # 只触发裁判（rounds=0）
 python3 -m debate_tool resume topic.md --rounds 0 --message '...'
+
+# 仅注入配置、不辩论不裁判（推荐用 modify，语义更清晰）
+python3 -m debate_tool modify topic_debate_log.json inject_config.md
+# 等价于（但 modify 语义更清晰，优先使用 modify）：
+# python3 -m debate_tool resume topic_debate_log.json inject_config.md --rounds 0 --no-judge
 ```
 
 所有命令在 `$DEBATE_TOOL_DIR` 目录下执行（即 debate-tool 安装目录）。

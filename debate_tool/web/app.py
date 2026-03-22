@@ -428,51 +428,28 @@ def create_app() -> Flask:
     # ── POST /api/execute-modify — Execute modify command ────────
     @app.route("/api/execute-modify", methods=["POST"])
     def api_execute_modify():
-        """Execute topic modify command via subprocess."""
+        """Execute config-only modify command via subprocess."""
         import subprocess
+        import sys as _sys
 
         data = request.get_json(silent=True) or {}
+        log_file = data.get("log_file", "").strip()
         topic_file = data.get("topic_file", "").strip()
-        modify_type = data.get("modify_type", "").strip()
+        force = data.get("force", False)
 
+        if not log_file:
+            return jsonify(error="日志文件不能为空"), 400
         if not topic_file:
-            return jsonify(error="话题文件不能为空"), 400
+            return jsonify(error="Resume Topic 文件不能为空"), 400
 
         try:
-            cmd = ["python", "-m", "debate_tool", "modify", topic_file]
+            cmd = [_sys.executable, "-m", "debate_tool", "modify",
+                   log_file, topic_file]
+            if force:
+                cmd.append("--force")
 
-            if modify_type == "set":
-                field = data.get("field", "").strip()
-                value = data.get("value", "").strip()
-                if not field or not value:
-                    return jsonify(error="字段和值不能为空"), 400
-                cmd.extend(["--set", f"{field}={value}"])
-
-            elif modify_type == "add":
-                debater = data.get("debater", "").strip()
-                reason = data.get("reason", "").strip()
-                if not debater:
-                    return jsonify(error="辩手信息不能为空"), 400
-                cmd.extend(["--add", debater])
-                if reason:
-                    cmd.extend(["--reason", reason])
-
-            elif modify_type == "drop":
-                debater = data.get("debater", "").strip()
-                if not debater:
-                    return jsonify(error="辩手名称不能为空"), 400
-                cmd.extend(["--drop", debater])
-
-            elif modify_type == "pivot":
-                pivot = data.get("pivot", "").strip()
-                reason = data.get("reason", "").strip()
-                if not pivot:
-                    return jsonify(error="立场信息不能为空"), 400
-                cmd.extend(["--pivot", pivot])
-                if reason:
-                    cmd.extend(["--reason", reason])
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(cmd, capture_output=True, text=True,
+                                    timeout=600)
             return jsonify(
                 success=result.returncode == 0,
                 stdout=result.stdout,
